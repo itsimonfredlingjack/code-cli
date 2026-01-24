@@ -6,23 +6,25 @@ from typing import List, Tuple
 import random
 
 COLORS = {
-    # Soft Pastel Palette
-    "bg": "#1a1b26",  # Deep gray-blue void
-    "surface": "#24283b",  # Lighter panel
-    "surface_light": "#2f334d",  # Selection highlight
-    "surface_glow": "#3a3e5a",  # Glow layer
-    # Pastel Accents
-    "primary": "#b5b3cf",  # Soft lavender
-    "secondary": "#a8e6cf",  # Mint green
-    "tertiary": "#ffd3b6",  # Peach
-    # State Colors (Softened)
-    "error": "#ffb7b2",  # Soft pink
-    "warning": "#ffaaa5",  # Soft coral
-    "success": "#c1e1c1",  # Sage green
+    # Deep Cyberpunk Palette
+    "bg": "#0d0e14",  # Near-black void
+    "surface": "#161b22",  # Dark grey-blue
+    "surface_light": "#21262d",  # Highlight
+    "surface_glow": "#30363d",  # Glow
+    # Vibrant Neon Accents
+    "primary": "#bb9af7",  # Electric lavender
+    "secondary": "#73daca",  # Cyber mint
+    "tertiary": "#ff9e64",  # Neon orange/peach
+    # State Colors
+    "error": "#f7768e",  # Neon pink/red
+    "warning": "#e0af68",  # Cyber amber
+    "success": "#9ece6a",  # Matrix green
     # Text Colors
-    "text": "#c0caf5",  # Muted blue-white
-    "text_dim": "#7aa2f7",  # Dimmed
-    "text_bright": "#e0af68",  # Accent text
+    "text": "#c0caf5",  # Soft white-blue
+    "text_dim": "#565f89",  # Steel blue
+    "text_bright": "#7aa2f7",  # Bright blue
+    "glitch_1": "#ff00ff",  # Magenta glitch
+    "glitch_2": "#00ffff",  # Cyan glitch
 }
 
 CSS_VARS = f"""

@@ -26,38 +26,43 @@ class OpenAICompatProvider(LLMProvider):
         tools: Optional[List[ToolDefinition]] = None,
         temperature: float = 0.7,
     ) -> AsyncIterator[StreamChunk]:
-
         openai_messages = []
         for msg in messages:
             if msg.role == Role.TOOL:
                 if msg.tool_results:
                     for r in msg.tool_results:
-                        openai_messages.append({
-                            "role": "tool",
-                            "tool_call_id": r.tool_call_id,
-                            "content": r.content,
-                        })
+                        openai_messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": r.tool_call_id,
+                                "content": r.content,
+                            }
+                        )
             elif msg.tool_calls:
-                openai_messages.append({
-                    "role": "assistant",
-                    "content": msg.content if isinstance(msg.content, str) else None,
-                    "tool_calls": [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.name,
-                                "arguments": json.dumps(tc.arguments),
-                            },
-                        }
-                        for tc in msg.tool_calls
-                    ],
-                })
+                openai_messages.append(
+                    {
+                        "role": "assistant",
+                        "content": msg.content if isinstance(msg.content, str) else None,
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.name,
+                                    "arguments": json.dumps(tc.arguments),
+                                },
+                            }
+                            for tc in msg.tool_calls
+                        ],
+                    }
+                )
             else:
-                openai_messages.append({
-                    "role": msg.role.value,
-                    "content": msg.content,
-                })
+                openai_messages.append(
+                    {
+                        "role": msg.role.value,
+                        "content": msg.content,
+                    }
+                )
 
         payload = {
             "model": self.model,
@@ -139,11 +144,13 @@ class OpenAICompatProvider(LLMProvider):
                                 args = json.loads(tc_data["arguments"]) if tc_data["arguments"] else {}
                             except json.JSONDecodeError:
                                 args = {}
-                            final_tool_calls.append(ToolCall(
-                                id=tc_data["id"] or "call_unknown", # Fallback ID if missing
-                                name=tc_data["name"],
-                                arguments=args,
-                            ))
+                            final_tool_calls.append(
+                                ToolCall(
+                                    id=tc_data["id"] or "call_unknown",  # Fallback ID if missing
+                                    name=tc_data["name"],
+                                    arguments=args,
+                                )
+                            )
 
                         yield StreamChunk(
                             done=True,
@@ -156,8 +163,27 @@ class OpenAICompatProvider(LLMProvider):
     def count_tokens(self, text: str) -> int:
         if self._tokenizer is None:
             import tiktoken
+
             try:
                 self._tokenizer = tiktoken.encoding_for_model(self.model)
             except KeyError:
                 self._tokenizer = tiktoken.get_encoding("cl100k_base")
         return len(self._tokenizer.encode(text))
+
+    async def get_available_models(self) -> List[str]:
+        """Fetch available models from the provider."""
+        headers = {}
+        if self.api_key:
+            headers["authorization"] = f"Bearer {self.api_key}"
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(f"{self.base_url}/models", headers=headers, timeout=5.0)
+                if response.status_code == 200:
+                    data = response.json()
+                    # Handle both standard OpenAI format (data=[...]) and simple list
+                    models_data = data.get("data", [])
+                    return [m["id"] for m in models_data if "id" in m]
+                return []
+            except Exception:
+                return []

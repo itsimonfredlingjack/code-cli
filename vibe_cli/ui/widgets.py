@@ -6,15 +6,13 @@ from rich.syntax import Syntax
 from rich.text import Text
 from rich.panel import Panel
 from rich.align import Align
-from rich.console import Group
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional
 import math
 import random
 from textual.reactive import reactive
 from rich import box
-from rich import box
-from .theme import COLORS, VibeNeonStyle, TECH, glitch_text
+from .theme import COLORS, glitch_text
 import pygments.styles
 
 # Register custom neon theme
@@ -120,6 +118,7 @@ class AICoreAvatar(Widget):
 
     state = reactive("idle")
     phase = reactive(0.0)
+    model = reactive("phi-4")
 
     def on_mount(self) -> None:
         self.set_interval(0.05, self.tick)  # 20 FPS
@@ -201,19 +200,81 @@ class AICoreAvatar(Widget):
         ring_idx = int(self.phase * 2) % len(ring_chars)
         ring_char = ring_chars[ring_idx]
 
+        # Scanline effect overlay
+        scanline_idx = int(self.phase * 5) % height
         # Build title with animated ring effect
+        model_display = self.model.upper()
         if self.state in ("thinking", "coding"):
-            title = f"[{ring_style} {ring_color}]{ring_char}[/] CORE [{ring_style} {ring_color}]{ring_char}[/]"
+            title = (
+                f"[{ring_style} {ring_color}]{ring_char}[/] {model_display} [{ring_style} {ring_color}]{ring_char}[/]"
+            )
         else:
-            title = f"[{ring_color}]●[/] CORE [{ring_color}]●[/]"
+            title = f"[{ring_color}]●[/] {model_display} [{ring_color}]●[/]"
 
-        art = "\n".join(output_lines)
+        # Post-process lines for scanlines
+        final_lines = []
+        for i, line in enumerate(output_lines):
+            if i == scanline_idx:
+                # Bright scanline
+                final_lines.append(f"[bold {COLORS['text_bright']}]{line}[/]")
+            elif i % 2 == 0:
+                # Dimmed scanline
+                final_lines.append(f"[dim]{line}[/]")
+            else:
+                final_lines.append(line)
+
+        art = "\n".join(final_lines)
+
+        # Glitch flicker
+        panel_style = f"on {COLORS['bg']}"
+        if self.state == "coding" and random.random() < 0.1:
+            panel_style = f"on {COLORS['surface_glow']}"
+
         return Panel(
-            Align.center(Text(art, style=f"bold {ring_color}")),
+            Align.center(Text.from_markup(art, style=f"bold {ring_color}")),
             title=title,
             border_style=f"{ring_style} {ring_color}".strip(),
-            style=f"on {COLORS['bg']}",
+            style=panel_style,
             box=box.DOUBLE,
+        )
+
+
+class SystemMonitor(Static):
+    """Pseudo-live system telemetry"""
+
+    cpu = reactive(0.0)
+    ram = reactive(0.0)
+    vibe = reactive(0.8)
+
+    def on_mount(self) -> None:
+        self.set_interval(1.5, self._update_metrics)
+
+    def _update_metrics(self) -> None:
+        # Simulate some jitter
+        self.cpu = max(0.1, min(0.9, self.cpu + random.uniform(-0.1, 0.1)))
+        self.ram = max(0.4, min(0.7, self.ram + random.uniform(-0.02, 0.02)))
+        self.vibe = max(0.6, min(1.0, self.vibe + random.uniform(-0.05, 0.05)))
+        self.refresh()
+
+    def render(self) -> RenderableType:
+        def get_bar(val: float, color: str) -> str:
+            width = 12
+            filled = int(val * width)
+            bar = "█" * filled + "░" * (width - filled)
+            return f"[{color}]{bar}[/]"
+
+        lines = [
+            f"[dim]CPU [/] {get_bar(self.cpu, COLORS['primary'])} [dim]{int(self.cpu * 100)}%[/]",
+            f"[dim]RAM [/] {get_bar(self.ram, COLORS['secondary'])} [dim]{int(self.ram * 100)}%[/]",
+            f"[dim]VIBE[/] {get_bar(self.vibe, COLORS['tertiary'])} [dim]{int(self.vibe * 100)}%[/]",
+        ]
+
+        return Panel(
+            "\n".join(lines),
+            title="TELEMETRY",
+            border_style=COLORS["surface_light"],
+            style=f"on {COLORS['surface']}",
+            box=box.HORIZONTALS,
         )
 
 
@@ -251,20 +312,42 @@ class PowerGauge(Widget):
 
 
 class HyperChatBubble(Widget):
-    """Floating glass interaction bubble"""
+    """Floating glass interaction bubble with optional typewriter effect"""
 
-    def __init__(self, role: str, content: str, timestamp: Optional[datetime] = None):
+    content = reactive("")
+    displayed_content = reactive("")
+    _typing_task = None
+
+    def __init__(self, role: str, content: str, timestamp: Optional[datetime] = None, typewriter: bool = False):
         super().__init__()
         self.role = role
+        self.typewriter = typewriter
         self.content = content
         self.timestamp = timestamp or datetime.now()
+        self._index = 0
+
+    def on_mount(self) -> None:
+        if self.typewriter and self.role == "assistant":
+            self.set_interval(0.01, self._type_tick)
+        else:
+            self.displayed_content = self.content
+
+    def _type_tick(self) -> None:
+        if self._index < len(self.content):
+            self._index += 1
+            self.displayed_content = self.content[: self._index]
+            self.refresh()
+
+    def watch_content(self, new_content: str) -> None:
+        if not self.typewriter:
+            self.displayed_content = new_content
 
     def render(self) -> RenderableType:
         time_str = self.timestamp.strftime("%H:%M")
 
         if self.role == "user":
             header = f"[bold {COLORS['primary']}]➜ COMMAND[/]"
-            content_render = Text(self.content, style=COLORS["text"])
+            content_render = Text(self.displayed_content, style=COLORS["text"])
 
             panel = Panel(
                 content_render,
@@ -273,18 +356,26 @@ class HyperChatBubble(Widget):
                 subtitle=f"[dim]@{time_str}[/]",
                 subtitle_align="right",
                 border_style=COLORS["primary"],
-                box=box.HEAVY,  # Sharp, command-line feel
+                box=box.SQUARE,  # Sharp, command-line feel
                 padding=(0, 1),
-                style="on default",  # Transparent/default bg
-                expand=False,  # Shrink to fit content
+                style=f"on {COLORS['surface_light']}",
+                expand=False,
             )
             return Align.right(panel)
 
         elif self.role == "assistant":
             # Glitched title for vibrant AI feel
-            title_text = glitch_text("DevOps Agent", intensity=0.05)  # Very subtle glitch
+            title_text = glitch_text("DevOps Agent", intensity=0.03)
             header = f"[bold {COLORS['tertiary']}]◈ {title_text}[/]"
-            content_render = Markdown(self.content)
+            content_render = Markdown(self.displayed_content)
+
+            # Pulsing border style
+            border_color = COLORS["secondary"]
+            if self.typewriter and self._index < len(self.content):
+                # Pulse during typing
+                pulse = (math.sin(self._index / 5) + 1) / 2
+                if pulse > 0.5:
+                    border_color = COLORS["primary"]
 
             panel = Panel(
                 content_render,
@@ -292,11 +383,11 @@ class HyperChatBubble(Widget):
                 title_align="left",
                 subtitle=f"[dim]@{time_str}[/]",
                 subtitle_align="left",
-                border_style=COLORS["secondary"],
-                box=box.ROUNDED,  # Clean rounded borders
+                border_style=border_color,
+                box=box.HEAVY_EDGE,
                 padding=(0, 1),
-                style=f"on {COLORS['surface']}",  # Glassy bg
-                width=60,  # Fixed width for readability
+                style=f"on {COLORS['surface']}",
+                width=None,  # Auto width
             )
             return Align.left(panel)
 

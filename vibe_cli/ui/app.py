@@ -1,23 +1,31 @@
 # vibe_cli/ui/app.py
 
-from pathlib import Path
 import logging
+from pathlib import Path
+
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Container, Vertical, ScrollableContainer
 from textual.widgets import Input, Static
-from textual.binding import Binding
-
-from .theme import CSS_VARS
-from .widgets import HyperChatBubble, AICoreAvatar, StatusBar, SystemBanner, CommandHistory, ShortcutsPanel
 
 from vibe_cli.agent.loop import AgentLoop
+from vibe_cli.config import Config, AgentConfig
 from vibe_cli.providers.openai_compat import OpenAICompatProvider
 from vibe_cli.tools.base import ToolRegistry
 from vibe_cli.tools.filesystem import ReadFileTool, WriteFileTool, StrReplaceTool
 from vibe_cli.tools.git import GitStatusTool, GitAddTool, GitCommitTool
 from vibe_cli.tools.shell import ShellTool
-from vibe_cli.config import Config, AgentConfig
-from vibe_cli.agent.checkpoint import CheckpointManager
+
+from .theme import CSS_VARS
+from .widgets import (
+    HyperChatBubble,
+    AICoreAvatar,
+    StatusBar,
+    SystemBanner,
+    CommandHistory,
+    ShortcutsPanel,
+    SystemMonitor,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +46,8 @@ class ChatView(ScrollableContainer):
         yield Static(id="top-spacer")
 
     def add_message(self, role: str, content: str) -> None:
-        self.mount(HyperChatBubble(role, content))
+        typewriter = role == "assistant" and len(content) > 10
+        self.mount(HyperChatBubble(role, content, typewriter=typewriter))
         self.scroll_end(animate=False)
 
     def stream_append(self, text: str) -> None:
@@ -82,7 +91,7 @@ class VibeApp(App):
     #chat-area {
         height: 100%;
         background: $bg;
-        margin-left: 1; 
+        margin-left: 1;
     }
     
     #chat-view {
@@ -156,6 +165,12 @@ class VibeApp(App):
         margin-top: 1;
     }
 
+    /* SystemMonitor */
+    SystemMonitor {
+        height: auto;
+        margin-top: 1;
+    }
+
     /* ShortcutsPanel Overlay */
     #shortcuts-panel {
         dock: bottom;
@@ -195,6 +210,22 @@ class VibeApp(App):
         )
         self.agent = AgentLoop(self.provider, self.tools, AgentConfig())
 
+    def on_mount(self) -> None:
+        self.set_interval(10.0, self._poll_models)
+
+    async def _poll_models(self) -> None:
+        """Poll for active models"""
+        try:
+            models = await self.provider.get_available_models()
+            if models:
+                # Update if different (taking the first one as active)
+                new_model = models[0]
+                avatar = self.query_one("#avatar", AICoreAvatar)
+                if avatar.model != new_model:
+                    avatar.model = new_model
+        except Exception:
+            pass  # Silent fail on polling errors
+
     def compose(self) -> ComposeResult:
         # Heavily layered layout
 
@@ -204,7 +235,10 @@ class VibeApp(App):
         with Container(id="layout-root"):
             # 2. Sidebar (AI Core)
             with Vertical(id="sidebar"):
-                yield Container(AICoreAvatar(id="avatar"), id="avatar-container")
+                avatar = AICoreAvatar(id="avatar")
+                avatar.model = self.provider.model
+                yield Container(avatar, id="avatar-container")
+                yield SystemMonitor(id="system-monitor")
                 yield CommandHistory(id="cmd-history")
 
             # 3. Main Chat View
@@ -249,9 +283,7 @@ class VibeApp(App):
         avatar.state = "thinking"
         status_bar.status = "processing"
 
-        import time
-
-        start_time = time.time()
+        # start_time = time.time()
 
         try:
             async for chunk in self.agent.run(text):
