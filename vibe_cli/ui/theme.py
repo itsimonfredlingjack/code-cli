@@ -1,9 +1,8 @@
 # vibe_cli/ui/theme.py
 
-from rich.style import Style
-from rich.text import Text
-from typing import List, Tuple
 import random
+
+from rich.text import Text
 
 COLORS = {
     # Deep Cyberpunk Palette
@@ -82,9 +81,9 @@ class Shader:
 
 # --- CUSTOM ASSETS ---
 
-from rich.box import Box
 from pygments.style import Style as PygmentsStyle
-from pygments.token import Keyword, Name, Comment, String, Error, Number, Operator, Generic
+from pygments.token import Comment, Error, Generic, Keyword, Name, Number, Operator, String
+from rich.box import Box
 
 # Custom "Glitch" Box using density characters
 # Refined "Thin Glitch" - Elegant, sharp, but signal-degraded

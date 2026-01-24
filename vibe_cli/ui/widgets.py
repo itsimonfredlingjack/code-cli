@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime
 import math
 import random
+from datetime import datetime
+from typing import Optional
 
+import pygments.styles
 from rich import box
 from rich.align import Align
 from rich.console import RenderableType
@@ -11,10 +13,12 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.text import Text
+from textual.app import ComposeResult
+from textual.containers import Container
 from textual.reactive import reactive
+from textual.screen import ModalScreen
 from textual.widget import Widget
-from textual.widgets import Static
-import pygments.styles
+from textual.widgets import Button, Label, Static
 
 from .system_metrics import SystemMetricsProvider
 from .theme import COLORS, glitch_text
@@ -553,3 +557,75 @@ class ShortcutsPanel(Static):
             border_style=COLORS["primary"],
             style=f"on {COLORS['surface']}",
         )
+
+
+class ConfirmationModal(ModalScreen[bool]):
+    """Modal for confirming dangerous actions"""
+
+    CSS = f"""
+    ConfirmationModal {{
+        align: center middle;
+        background: rgba(0, 0, 0, 0.7);
+    }}
+
+    #dialog {{
+        grid-size: 2;
+        grid-gutter: 1 2;
+        grid-rows: 1fr 3;
+        padding: 0 1;
+        width: 60;
+        height: auto;
+        border: thick {COLORS['warning']};
+        background: {COLORS['surface']};
+    }}
+
+    #title {{
+        column-span: 2;
+        height: 1;
+        width: 100%;
+        content-align: center middle;
+        text-style: bold;
+        color: {COLORS['warning']};
+    }}
+
+    #details {{
+        column-span: 2;
+        height: auto;
+        margin: 1 0;
+    }}
+
+    Button {{
+        width: 100%;
+    }}
+    """
+
+    def __init__(self, tool_name: str, arguments: dict):
+        super().__init__()
+        self.tool_name = tool_name
+        self.arguments = arguments
+
+    def compose(self) -> ComposeResult:
+        import json
+
+        args_json = json.dumps(self.arguments, indent=2)
+
+        yield Container(
+            Label(f"⚠ SECURITY WARNING: {self.tool_name}", id="title"),
+            Syntax(
+                args_json,
+                "json",
+                theme="vibe_neon",
+                line_numbers=False,
+                word_wrap=True,
+                id="details",
+            ),
+            Button("Reject", variant="error", id="reject"),
+            Button("Approve", variant="success", id="approve"),
+            id="dialog",
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "approve":
+            self.dismiss(True)
+        else:
+            self.dismiss(False)
