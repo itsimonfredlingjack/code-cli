@@ -92,7 +92,7 @@ GLITCH = Box("─░─╌\n─░─╌\n─░─╌\n─░─╌\n│░│�
 TECH = Box("┌─┬┐\n├─┼┤\n├─┼┤\n└─┴┘\n│ │ \n│ │ \n├─┼┤\n├─┼┤\n")
 
 # Retro CRT Scanline Box (Strict ASCII)
-SCANLINE = Box("+---+\n+---+\n+---+\n+---+\n¦\n¦\n+\n+\n")
+SCANLINE = Box("+--+\n+--+\n+--+\n+--+\n¦\n¦\n+\n+\n")
 
 
 def glitch_text(text: str, intensity: float = 0.1) -> str:
