@@ -142,6 +142,14 @@ class VibeApp(App):
         margin-top: 1;
     }
 
+    /* Chat Bubbles */
+    HyperChatBubble {
+        width: 100%;
+        height: auto;
+        padding: 0 1;
+        margin-bottom: 1;
+    }
+
     /* CommandHistory */
     CommandHistory {
         height: auto;

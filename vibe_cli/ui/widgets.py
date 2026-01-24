@@ -253,39 +253,71 @@ class HyperChatBubble(Widget):
         self.timestamp = timestamp or datetime.now()
 
     def render(self) -> RenderableType:
+        from rich import box
+
         time_str = self.timestamp.strftime("%H:%M")
 
         if self.role == "user":
-            style = f"bold {COLORS['primary']}"
-            border = COLORS["primary"]
-            header = f"[bold {COLORS['primary']}]USER[/] [dim]@{time_str}[/]"
+            header = f"[bold {COLORS['primary']}]➜ COMMAND[/]"
             content_render = Text(self.content, style=COLORS["text"])
 
+            panel = Panel(
+                content_render,
+                title=header,
+                title_align="right",
+                subtitle=f"[dim]@{time_str}[/]",
+                subtitle_align="right",
+                border_style=COLORS["primary"],
+                box=box.HEAVY,  # Sharp, command-line feel
+                padding=(0, 1),
+                style="on default",  # Transparent/default bg
+                expand=False,  # Shrink to fit content
+            )
+            return Align.right(panel)
+
         elif self.role == "assistant":
-            style = f"bold {COLORS['secondary']}"
-            border = COLORS["secondary"]
-            header = f"[bold {COLORS['secondary']}]AI_CORE[/] [dim]@{time_str}[/]"
+            header = f"[bold {COLORS['secondary']}]◈ AI_CORE[/]"
             content_render = Markdown(self.content)
 
+            panel = Panel(
+                content_render,
+                title=header,
+                title_align="left",
+                subtitle=f"[dim]@{time_str}[/]",
+                subtitle_align="left",
+                border_style=COLORS["secondary"],
+                box=box.ROUNDED,  # Soft, glass feel
+                padding=(0, 1),
+                style=f"on {COLORS['surface']}",  # Glassy bg
+                width=60,  # Fixed width for readability
+            )
+            return Align.left(panel)
+
         elif self.role == "tool":
-            style = COLORS["warning"]
-            border = COLORS["warning"]
-            header = f"[bold {COLORS['warning']}]SYS_EXEC[/] [dim]@{time_str}[/]"
+            header = f"[bold {COLORS['warning']}]⚡ SYS_EXEC[/] [dim]@{time_str}[/]"
             content_render = Syntax(self.content, "bash", theme="monokai")
 
+            # Tool logs take full width (or centered)
+            return Panel(
+                content_render,
+                title=header,
+                border_style=COLORS["warning"],
+                box=box.ASCII,  # Raw log feel
+                padding=(0, 1),
+                style=f"on {COLORS['surface']}",
+            )
+
         else:  # Error
-            style = COLORS["error"]
-            border = COLORS["error"]
-            header = f"[bold {COLORS['error']}]CRITICAL[/] [dim]@{time_str}[/]"
+            header = f"[bold {COLORS['error']}]⚠ CRITICAL[/] [dim]@{time_str}[/]"
             content_render = Text(self.content, style=COLORS["error"])
 
-        return Panel(
-            content_render,
-            title=header,
-            border_style=border,
-            padding=(0, 1),
-            style=f"on {COLORS['surface']}",  # Distinct background for bubble
-        )
+            return Panel(
+                content_render,
+                title=header,
+                border_style=COLORS["error"],
+                padding=(0, 1),
+                style=f"on {COLORS['surface']}",
+            )
 
 
 class CommandHistory(Static):
