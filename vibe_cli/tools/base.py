@@ -1,5 +1,6 @@
 import importlib.util
 import logging
+import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 from types import ModuleType
@@ -7,6 +8,10 @@ from types import ModuleType
 from vibe_cli.models.tools import ToolDefinition, ToolResult
 
 logger = logging.getLogger(__name__)
+
+# Security: Disable workspace plugin loading by default
+# Set VIBE_ALLOW_WORKSPACE_PLUGINS=1 to enable loading plugins from .vibe/tools/
+ALLOW_WORKSPACE_PLUGINS = os.environ.get("VIBE_ALLOW_WORKSPACE_PLUGINS", "0") == "1"
 
 
 class Tool(ABC):
@@ -61,6 +66,20 @@ class ToolRegistry:
                 self.register(tool)
 
     def register_plugins(self, workspace: Path) -> None:
+        """Load plugins from workspace .vibe/tools/ directory.
+
+        SECURITY: Disabled by default. Set VIBE_ALLOW_WORKSPACE_PLUGINS=1 to enable.
+        Loading arbitrary Python code from workspaces is a security risk.
+        """
+        if not ALLOW_WORKSPACE_PLUGINS:
+            plugin_dir = workspace / ".vibe" / "tools"
+            if plugin_dir.exists() and any(plugin_dir.glob("*.py")):
+                logger.warning(
+                    "Workspace plugins found in %s but loading is disabled. "
+                    "Set VIBE_ALLOW_WORKSPACE_PLUGINS=1 to enable (security risk).",
+                    plugin_dir,
+                )
+            return
         self.load_plugins(workspace / ".vibe" / "tools")
 
     def _default_plugin_dir(self) -> Path:

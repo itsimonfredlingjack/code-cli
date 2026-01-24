@@ -7,11 +7,32 @@ from vibe_cli.tools.base import Tool, ToolDefinition, ToolResult
 
 
 class ShellTool(Tool):
-    def __init__(self, workspace: Path, allowed_commands: list[str] | None = None, blocked_patterns: list[str] | None = None):
+    # Shell metacharacters that enable command injection
+    DANGEROUS_PATTERNS = [
+        "|",    # Pipe (command chaining)
+        "||",   # OR operator
+        "&&",   # AND operator
+        ";",    # Command separator
+        "$(",   # Command substitution
+        "`",    # Backtick command substitution
+        ">",    # Output redirection
+        "<",    # Input redirection
+        ">>",   # Append redirection
+        "&",    # Background execution
+        "\n",   # Newline (command separator)
+    ]
+
+    def __init__(
+        self,
+        workspace: Path,
+        allowed_commands: list[str] | None = None,
+        blocked_patterns: list[str] | None = None,
+        timeout: int = 30,
+    ):
         self.workspace = workspace
         self.allowed = set(allowed_commands or ["ls", "cat", "grep", "git", "pytest", "npm", "echo", "pwd", "mkdir", "touch"])
-        self.blocked = blocked_patterns or ["rm -rf", "> /dev/", "sudo"]
-        self.timeout = 30
+        self.blocked = blocked_patterns or ["rm -rf", "sudo", "/dev/"]
+        self.timeout = timeout
 
     @property
     def definition(self) -> ToolDefinition:
@@ -26,7 +47,16 @@ class ShellTool(Tool):
         )
 
     async def execute(self, command: str, cwd: str | None = None) -> ToolResult:
-        # Security checks
+        # Block shell metacharacters that enable injection attacks
+        for pattern in self.DANGEROUS_PATTERNS:
+            if pattern in command:
+                return ToolResult(
+                    tool_call_id="",
+                    content=f"Error: Command contains dangerous shell metacharacter: {repr(pattern)}",
+                    is_error=True,
+                )
+
+        # Check custom blocked patterns
         for blocked in self.blocked:
             if blocked in command:
                 return ToolResult(
@@ -35,9 +65,25 @@ class ShellTool(Tool):
                     is_error=True,
                 )
 
+        # Parse command into arguments safely
+        try:
+            parts = shlex.split(command)
+        except ValueError as e:
+            return ToolResult(
+                tool_call_id="",
+                content=f"Error: Invalid command syntax: {e}",
+                is_error=True,
+            )
+
+        if not parts:
+            return ToolResult(
+                tool_call_id="",
+                content="Error: Empty command",
+                is_error=True,
+            )
+
         # Check if base command is allowed
-        parts = shlex.split(command)
-        if parts and parts[0] not in self.allowed:
+        if parts[0] not in self.allowed:
             return ToolResult(
                 tool_call_id="",
                 content=f"Error: Command '{parts[0]}' not in allowed list. Allowed: {', '.join(self.allowed)}",
@@ -51,8 +97,9 @@ class ShellTool(Tool):
                 return ToolResult(tool_call_id="", content="Error: cwd escapes workspace", is_error=True)
 
         try:
-            proc = await asyncio.create_subprocess_shell(
-                command,
+            # Use create_subprocess_exec instead of shell to prevent injection
+            proc = await asyncio.create_subprocess_exec(
+                *parts,
                 cwd=work_dir,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
