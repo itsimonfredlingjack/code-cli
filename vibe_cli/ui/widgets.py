@@ -12,7 +12,8 @@ from typing import Optional, List
 import math
 import random
 from textual.reactive import reactive
-from .theme import COLORS, GLITCH, VibeNeonStyle
+from rich import box
+from .theme import COLORS, VibeNeonStyle
 import pygments.styles
 
 # Register custom neon theme
@@ -211,7 +212,7 @@ class AICoreAvatar(Widget):
             title=title,
             border_style=f"{ring_style} {ring_color}".strip(),
             style=f"on {COLORS['bg']}",
-            box=GLITCH,
+            box=box.ROUNDED,
         )
 
 
@@ -258,8 +259,6 @@ class HyperChatBubble(Widget):
         self.timestamp = timestamp or datetime.now()
 
     def render(self) -> RenderableType:
-        from rich import box
-
         time_str = self.timestamp.strftime("%H:%M")
 
         if self.role == "user":
