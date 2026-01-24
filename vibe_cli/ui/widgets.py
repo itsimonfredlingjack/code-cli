@@ -291,7 +291,7 @@ class HyperChatBubble(Widget):
                 subtitle=f"[dim]@{time_str}[/]",
                 subtitle_align="left",
                 border_style=COLORS["secondary"],
-                box=GLITCH,  # Digital/Glitch feel
+                box=box.ROUNDED,  # Clean rounded borders
                 padding=(0, 1),
                 style=f"on {COLORS['surface']}",  # Glassy bg
                 width=60,  # Fixed width for readability
