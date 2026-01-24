@@ -1,4 +1,4 @@
-from typing import AsyncIterator, Callable, List
+from typing import AsyncIterator, Awaitable, Callable, List
 
 from vibe_cli.agent.context import ContextManager
 from vibe_cli.config import AgentConfig
@@ -13,7 +13,7 @@ class AgentLoop:
         provider: LLMProvider,
         tools: ToolRegistry,
         config: AgentConfig,
-        on_confirmation: Callable[[str, dict], bool] | None = None,
+        on_confirmation: Callable[[str, dict], Awaitable[bool]] | None = None,
     ):
         self.provider = provider
         self.tools = tools
@@ -75,7 +75,7 @@ class AgentLoop:
                 # Confirmation for dangerous tools
                 if tool and tool.definition.dangerous and self.config.require_confirmation:
                     if self.on_confirmation:
-                        approved = self.on_confirmation(tc.name, tc.arguments)
+                        approved = await self.on_confirmation(tc.name, tc.arguments)
                         if not approved:
                             results.append(
                                 ToolResult(

@@ -7,29 +7,30 @@ from pathlib import Path
 import aiofiles
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Vertical, ScrollableContainer
+from textual.containers import Container, ScrollableContainer, Vertical
 from textual.widgets import Input, Static
 
 from vibe_cli.agent.loop import AgentLoop
-from vibe_cli.config import Config, AgentConfig
+from vibe_cli.config import AgentConfig, Config
 from vibe_cli.providers.factory import build_provider
 from vibe_cli.tools.base import ToolRegistry
 from vibe_cli.tools.cloud import AWSResourceLister, K8sLogFetcher
-from vibe_cli.tools.filesystem import ReadFileTool, WriteFileTool, StrReplaceTool
-from vibe_cli.tools.git import GitStatusTool, GitAddTool, GitCommitTool
+from vibe_cli.tools.filesystem import ReadFileTool, StrReplaceTool, WriteFileTool
+from vibe_cli.tools.git import GitAddTool, GitCommitTool, GitStatusTool
 from vibe_cli.tools.shell import ShellTool
 
+from .project_tree import FilePinMessage, PinnedFilesPanel, ProjectTree
 from .theme import CSS_VARS
 from .widgets import (
-    HyperChatBubble,
     AICoreAvatar,
+    CommandHistory,
+    ConfirmationModal,
+    HyperChatBubble,
+    ShortcutsPanel,
     StatusBar,
     SystemBanner,
-    CommandHistory,
-    ShortcutsPanel,
     SystemMonitor,
 )
-from .project_tree import FilePinMessage, PinnedFilesPanel, ProjectTree
 
 logger = logging.getLogger(__name__)
 
@@ -253,7 +254,13 @@ class VibeApp(App):
 
         provider_cfg = self.config.providers.get(self.config.default_provider)
         self.provider = build_provider(provider_cfg)
-        self.agent = AgentLoop(self.provider, self.tools, AgentConfig())
+        self.agent = AgentLoop(
+            self.provider, self.tools, AgentConfig(), on_confirmation=self._handle_confirmation
+        )
+
+    async def _handle_confirmation(self, tool_name: str, arguments: dict) -> bool:
+        """Handle confirmation requests from the agent"""
+        return await self.push_screen_wait(ConfirmationModal(tool_name, arguments))
 
     def on_mount(self) -> None:
         self.set_interval(10.0, self._poll_models)

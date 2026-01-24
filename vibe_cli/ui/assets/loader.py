@@ -1,9 +1,9 @@
 # vibe_cli/ui/assets/loader.py
 """ASCII Art Asset Loader"""
 
+import logging
 from pathlib import Path
 from typing import Optional
-import logging
 
 ASSETS_DIR = Path(__file__).parent
 
