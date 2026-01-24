@@ -212,7 +212,7 @@ class AICoreAvatar(Widget):
             title=title,
             border_style=f"{ring_style} {ring_color}".strip(),
             style=f"on {COLORS['bg']}",
-            box=box.ROUNDED,
+            box=box.DOUBLE,
         )
 
 
