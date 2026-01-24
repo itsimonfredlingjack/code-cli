@@ -1,8 +1,11 @@
 import sys
 
+from vibe_cli.ui.app import VibeApp
+
+
 def main():
-    print("vibe-cli starting... 🚀")
-    # TODO: Initialize App here
+    app = VibeApp()
+    app.run()
     return 0
 
 if __name__ == "__main__":
