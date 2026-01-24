@@ -75,3 +75,47 @@ class Shader:
             char = "▓" if (y % 2 == 0) else "▒"
             lines.append(char * width)
         return Text("\n".join(lines), style=color)
+
+
+# --- CUSTOM ASSETS ---
+
+from rich.box import Box
+from pygments.style import Style as PygmentsStyle
+from pygments.token import Keyword, Name, Comment, String, Error, Number, Operator, Generic
+
+# Custom "Glitch" Box using density characters
+GLITCH = Box("░▒▒░\n░▒▒░\n░▒▒░\n░▒▒░\n░▒▒░\n░▒▒░\n░▒▒░\n░▒▒░\n")
+
+
+class VibeNeonStyle(PygmentsStyle):
+    """Custom Pygments style matching Vibe colors"""
+
+    background_color = COLORS["surface"]
+    highlight_color = COLORS["surface_light"]
+
+    styles = {
+        # Keywords: Lavender
+        Keyword: f"bold {COLORS['primary']}",
+        Keyword.Constant: f"bold {COLORS['tertiary']}",
+        Keyword.Namespace: f"bold {COLORS['primary']}",
+        # Names: Text / Peach
+        Name: COLORS["text"],
+        Name.Function: f"bold {COLORS['tertiary']}",
+        Name.Class: f"bold {COLORS['tertiary']}",
+        Name.Builtin: COLORS["primary"],
+        # Strings: Mint
+        String: COLORS["secondary"],
+        String.Doc: f"italic {COLORS['text_dim']}",
+        # Numbers: Peach/Coral
+        Number: COLORS["warning"],
+        # Operators: Lavender
+        Operator: COLORS["primary"],
+        # Comments: Dim Blue
+        Comment: f"italic {COLORS['text_dim']}",
+        # Errors: Pink
+        Error: f"bold {COLORS['error']}",
+        # Component stuff
+        Generic.Prompt: f"bold {COLORS['primary']}",
+        Generic.Output: COLORS["text"],
+        Generic.Traceback: COLORS["error"],
+    }

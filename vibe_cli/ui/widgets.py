@@ -12,7 +12,11 @@ from typing import Optional, List
 import math
 import random
 from textual.reactive import reactive
-from .theme import COLORS
+from .theme import COLORS, GLITCH, VibeNeonStyle
+import pygments.styles
+
+# Register custom neon theme
+pygments.styles.STYLE_MAP["vibe_neon"] = "vibe_cli.ui.theme:VibeNeonStyle"
 
 
 class StatusBar(Static):
@@ -207,6 +211,7 @@ class AICoreAvatar(Widget):
             title=title,
             border_style=f"{ring_style} {ring_color}".strip(),
             style=f"on {COLORS['bg']}",
+            box=GLITCH,
         )
 
 
@@ -286,7 +291,7 @@ class HyperChatBubble(Widget):
                 subtitle=f"[dim]@{time_str}[/]",
                 subtitle_align="left",
                 border_style=COLORS["secondary"],
-                box=box.ROUNDED,  # Soft, glass feel
+                box=GLITCH,  # Digital/Glitch feel
                 padding=(0, 1),
                 style=f"on {COLORS['surface']}",  # Glassy bg
                 width=60,  # Fixed width for readability
@@ -295,7 +300,7 @@ class HyperChatBubble(Widget):
 
         elif self.role == "tool":
             header = f"[bold {COLORS['warning']}]⚡ SYS_EXEC[/] [dim]@{time_str}[/]"
-            content_render = Syntax(self.content, "bash", theme="monokai")
+            content_render = Syntax(self.content, "bash", theme="vibe_neon")
 
             # Tool logs take full width (or centered)
             return Panel(
