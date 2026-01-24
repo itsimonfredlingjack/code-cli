@@ -71,7 +71,7 @@ class VibeApp(App):
     /* Sidebar (Left) */
     #sidebar {
         dock: left;
-        width: 26;
+        width: 24;
         background: $surface;
         border-right: heavy $primary;
         height: 100%;
@@ -111,8 +111,8 @@ class VibeApp(App):
     /* === Widget Specifics === */
 
     #avatar-container {
-        height: 10;
-        margin-bottom: 2;
+        height: 12;
+        margin-bottom: 1;
     }
     
     #gauges-container {
