@@ -281,8 +281,8 @@ class HyperChatBubble(Widget):
 
         elif self.role == "assistant":
             # Glitched title for vibrant AI feel
-            title_text = glitch_text("DevOps Agent", intensity=0.1)
-            header = f"[bold {COLORS['secondary']}]◈ {title_text}[/]"
+            title_text = glitch_text("DevOps Agent", intensity=0.05)  # Very subtle glitch
+            header = f"[bold {COLORS['tertiary']}]◈ {title_text}[/]"
             content_render = Markdown(self.content)
 
             panel = Panel(
@@ -292,7 +292,7 @@ class HyperChatBubble(Widget):
                 subtitle=f"[dim]@{time_str}[/]",
                 subtitle_align="left",
                 border_style=COLORS["secondary"],
-                box=TECH,  # Schematic tech box
+                box=box.ROUNDED,  # Clean rounded borders
                 padding=(0, 1),
                 style=f"on {COLORS['surface']}",  # Glassy bg
                 width=60,  # Fixed width for readability
