@@ -8,7 +8,8 @@ import aiofiles
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, ScrollableContainer, Vertical
-from textual.widgets import Input, Static
+from textual.widgets import Collapsible, Input, Static
+
 
 from vibe_cli.agent.loop import AgentLoop
 from vibe_cli.config import AgentConfig, Config
@@ -31,6 +32,7 @@ from .widgets import (
     SystemBanner,
     SystemMonitor,
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -89,12 +91,23 @@ class VibeApp(App):
         background: $surface;
         border-right: heavy $primary;
         height: 100%;
-        padding: 1;
+        padding: 0 1;
         scrollbar-gutter: stable;
     }
 
     #sidebar-content {
         height: auto;
+    }
+
+    #sidebar Collapsible {
+        padding-left: 0;
+        padding-bottom: 0;
+        border-top: none;
+        background: $surface;
+    }
+
+    #sidebar Collapsible > Contents {
+        padding-left: 0;
     }
 
     /* Chat Area (Main) */
@@ -145,28 +158,21 @@ class VibeApp(App):
         height: 12;
         margin: 0 1;
     }
-    
-    /* Label Styles */
-    .section-label {
-        color: $text_dim;
-        text-align: center;
-        margin-bottom: 1;
-    }
 
     /* Project Tree */
     #project-tree {
         height: auto;
         min-height: 8;
-        border: solid $surface_light;
-        padding: 0 1;
+        border: none;
+        padding: 0;
     }
 
     /* Pinned Files */
     PinnedFilesPanel {
         height: auto;
-        margin-top: 1;
-        border: solid $surface_light;
-        padding: 0 1;
+        margin-top: 0;
+        border: none;
+        padding: 0;
     }
 
     /* StatusBar */
@@ -188,19 +194,13 @@ class VibeApp(App):
     /* CommandHistory */
     CommandHistory {
         height: auto;
-        margin-top: 1;
+        margin-top: 0;
     }
 
     /* SystemMonitor */
     SystemMonitor {
         height: auto;
-        margin-top: 1;
-    }
-
-    /* CommandHistory */
-    CommandHistory {
-        height: auto;
-        margin-top: 1;
+        margin-top: 0;
     }
 
     /* ShortcutsPanel Overlay */
@@ -254,9 +254,7 @@ class VibeApp(App):
 
         provider_cfg = self.config.providers.get(self.config.default_provider)
         self.provider = build_provider(provider_cfg)
-        self.agent = AgentLoop(
-            self.provider, self.tools, AgentConfig(), on_confirmation=self._handle_confirmation
-        )
+        self.agent = AgentLoop(self.provider, self.tools, AgentConfig(), on_confirmation=self._handle_confirmation)
 
     async def _handle_confirmation(self, tool_name: str, arguments: dict) -> bool:
         """Handle confirmation requests from the agent"""
@@ -299,12 +297,34 @@ class VibeApp(App):
                     avatar = AICoreAvatar(id="avatar")
                     avatar.model = self.provider.model
                     yield Container(avatar, id="avatar-container")
-                    yield Static("PROJECT", classes="section-label")
-                    yield ProjectTree(self.workspace, id="project-tree")
-                    yield Static("PINNED", classes="section-label")
-                    yield PinnedFilesPanel(id="pinned-files")
-                    yield SystemMonitor(id="system-monitor")
-                    yield CommandHistory(id="cmd-history")
+
+                    yield Collapsible(
+                        ProjectTree(self.workspace, id="project-tree"),
+                        title="PROJECT",
+                        collapsed=False,
+                        id="sidebar-project",
+                    )
+
+                    yield Collapsible(
+                        PinnedFilesPanel(id="pinned-files"),
+                        title="PINNED",
+                        collapsed=True,
+                        id="sidebar-pinned",
+                    )
+
+                    yield Collapsible(
+                        SystemMonitor(id="system-monitor"),
+                        title="SYSTEM",
+                        collapsed=True,
+                        id="sidebar-system",
+                    )
+
+                    yield Collapsible(
+                        CommandHistory(id="cmd-history"),
+                        title="LOG",
+                        collapsed=True,
+                        id="sidebar-log",
+                    )
 
             # 3. Main Chat View
             with Vertical(id="chat-area"):
@@ -359,6 +379,12 @@ class VibeApp(App):
                     # This is a ToolResult - add to command history
                     status = "error" if chunk.is_error else "success"
                     cmd_history.add_command(chunk.tool_name, status)
+                    if chunk.is_error:
+                        try:
+                            log_section = self.query_one("#sidebar-log", Collapsible)
+                            log_section.collapsed = False
+                        except Exception:
+                            pass
                     avatar.state = "coding"
                     chat.add_message("tool", chunk.content)
                     chat.add_message("assistant", "")
@@ -395,6 +421,12 @@ class VibeApp(App):
             self.pinned_files.add(rel)
         panel = self.query_one("#pinned-files", PinnedFilesPanel)
         panel.set_pins(sorted(self.pinned_files))
+        if self.pinned_files:
+            try:
+                pinned_section = self.query_one("#sidebar-pinned", Collapsible)
+                pinned_section.collapsed = False
+            except Exception:
+                pass
 
     async def _inject_pinned_context(self, text: str) -> str:
         if not self.pinned_files:

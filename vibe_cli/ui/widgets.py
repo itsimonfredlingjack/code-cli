@@ -211,7 +211,7 @@ class AICoreAvatar(Widget):
         # Scanline effect overlay
         scanline_idx = int(self.phase * 5) % height
         # Build title with animated ring effect
-        model_display = self.model.upper()
+        model_display = "DevOps Agent"
         if self.state in ("thinking", "coding"):
             title = (
                 f"[{ring_style} {ring_color}]{ring_char}[/] {model_display} [{ring_style} {ring_color}]{ring_char}[/]"
