@@ -34,6 +34,7 @@ class UIConfig(BaseModel):
     show_tokens: bool = True
     confirm_writes: bool = True
     confirm_shell: Literal["all", "dangerous", "none"] = "dangerous"
+    use_nerd_fonts: bool = False
 
 
 class ContextConfig(BaseModel):
@@ -61,6 +62,7 @@ class Config(BaseModel):
     Loaded from ~/.config/code-cli/config.toml.
     Contains settings for UI, context management, shell security, and LLM providers.
     """
+
     ui: UIConfig = Field(default_factory=UIConfig)
     context: ContextConfig = Field(default_factory=ContextConfig)
     shell: ShellConfig = Field(default_factory=ShellConfig)
