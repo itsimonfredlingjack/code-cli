@@ -7,35 +7,32 @@ from rich.box import ROUNDED
 # Semantic Color Tokens (CODENTIC Theme)
 COLORS = {
     # Backgrounds
-    "bg": "#0B0F13",              # Background base
-    "panel": "#121824",           # Panel surface
-    "panel_raised": "#18202D",   # Panel raised
-    "border": "#2B3646",         # Border
-    
+    "bg": "#0B0F13",  # Background base
+    "panel": "#121824",  # Panel surface
+    "panel_raised": "#18202D",  # Panel raised
+    "border": "#2B3646",  # Border
     # Text
-    "text": "#E8EEF6",           # Text primary
-    "text_muted": "#9AA7B5",     # Text muted
-    
+    "text": "#E8EEF6",  # Text primary
+    "text_muted": "#9AA7B5",  # Text muted
     # Accents
     "accent_orange": "#EE9405",  # Orange accent (current vibe)
-    "accent_cyan": "#46C8FF",    # Cyan (activity/streaming)
-    "success": "#31D158",        # Green (success/apply)
-    "danger": "#FF453A",         # Red (error/danger)
-    
+    "accent_cyan": "#46C8FF",  # Cyan (activity/streaming)
+    "success": "#31D158",  # Green (success/apply)
+    "danger": "#FF453A",  # Red (error/danger)
     # Legacy compatibility (mapped to new tokens)
-    "surface": "#121824",         # Alias for panel
+    "surface": "#121824",  # Alias for panel
     "surface_light": "#2B3646",  # Alias for border
-    "surface_glow": "#18202D",   # Alias for panel_raised
-    "primary": "#46C8FF",        # Alias for accent_cyan
-    "secondary": "#EE9405",      # Alias for accent_orange
-    "tertiary": "#31D158",       # Alias for success
-    "error": "#FF453A",          # Alias for danger
-    "warning": "#EE9405",        # Alias for accent_orange
-    "text_dim": "#9AA7B5",       # Alias for text_muted
-    "text_bright": "#E8EEF6",    # Alias for text
-    "focus_ring": "#46C8FF",     # Alias for accent_cyan
-    "card_border": "#2B3646",    # Alias for border
-    "card_shadow": "#0B0F13",    # Alias for bg
+    "surface_glow": "#18202D",  # Alias for panel_raised
+    "primary": "#46C8FF",  # Alias for accent_cyan
+    "secondary": "#EE9405",  # Alias for accent_orange
+    "tertiary": "#31D158",  # Alias for success
+    "error": "#FF453A",  # Alias for danger
+    "warning": "#EE9405",  # Alias for accent_orange
+    "text_dim": "#9AA7B5",  # Alias for text_muted
+    "text_bright": "#E8EEF6",  # Alias for text
+    "focus_ring": "#46C8FF",  # Alias for accent_cyan
+    "card_border": "#2B3646",  # Alias for border
+    "card_shadow": "#0B0F13",  # Alias for bg
 }
 
 # Color Discipline Rules:
@@ -106,28 +103,24 @@ ICONS = {
     # Branch/Git
     "branch": ("󰘬", "BR"),
     "git": ("󰊢", "GIT"),
-    
     # Model/LLM
     "model": ("󰒼", "MODEL"),
     "tokens": ("󰑲", "tks"),
-    
     # Status
     "queue": ("󰃃", "Q"),
     "spinner": ("󰔚", "..."),
     "done": ("󰄬", "[DONE]"),
     "error": ("󰅖", "ERR"),
-    
     # Tools
     "tool": ("󰆍", "TOOL"),
     "diff": ("󰀀", "DIFF"),
     "file": ("󰈔", "FILE"),
-    
-    # Navigation
+    # Navigation (single-char ASCII for narrow rail)
     "search": ("󰍉", "/"),
-    "files": ("󰉋", "FILES"),
-    "sessions": ("󰨞", "SESS"),
-    "settings": ("󰒓", "SET"),
-    
+    "files": ("󰉋", "F"),
+    "sessions": ("󰨞", "S"),
+    "settings": ("󰒓", "*"),
+    "tools": ("󰆍", "T"),
     # Actions
     "approve": ("󰄬", "OK"),
     "reject": ("󰜺", "X"),
@@ -135,11 +128,27 @@ ICONS = {
     "collapse": ("󰁍", "<"),
 }
 
+
 def get_icon(name: str) -> str:
-    """Get icon with Nerd Font fallback to ASCII."""
+    """
+    Get icon with Nerd Font fallback to ASCII.
+
+    Returns Nerd Font icon (index 0) if use_nerd_fonts=True in config,
+    otherwise returns ASCII fallback (index 1).
+    """
     icon_pair = ICONS.get(name, ("?", "?"))
-    # For now, return ASCII fallback (can be enhanced to detect Nerd Font support)
-    return icon_pair[1]
+
+    # Try to load config and check use_nerd_fonts setting
+    try:
+        from code_cli.config import Config
+
+        config = Config.load()
+        use_nerd_fonts = config.ui.use_nerd_fonts
+    except Exception:
+        # If config isn't available or loading fails, default to ASCII
+        use_nerd_fonts = False
+
+    return icon_pair[0] if use_nerd_fonts else icon_pair[1]
 
 
 class CodeNeonStyle(PygmentsStyle):

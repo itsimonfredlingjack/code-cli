@@ -63,7 +63,7 @@ class LeftRail(Container):
         from .project_tree import PinnedFilesPanel, ProjectTree
         
         # Always compose all widgets, show/hide based on state
-        yield Static(get_icon("files"), id="icon-files", classes="rail-icon")
+        yield Static(get_icon("files"), id="icon-files", classes="rail-icon active")
         yield Static(get_icon("sessions"), id="icon-sessions", classes="rail-icon")
         yield Static(get_icon("tools"), id="icon-tools", classes="rail-icon")
         yield Static(get_icon("search"), id="icon-search", classes="rail-icon")
@@ -97,12 +97,8 @@ class LeftRail(Container):
     def on_mount(self) -> None:
         """Set initial state."""
         self._update_display()
-        # Set first icon as active by default
-        if not self._expanded:
-            first_icon = self.query_one("#icon-files", Static)
-            if first_icon:
-                first_icon.add_class("active")
-                self._active_icon = "icon-files"
+        # First icon is active by default (class set in compose)
+        self._active_icon = "icon-files"
     
     def toggle(self) -> None:
         """Toggle between collapsed and expanded (keybinding-only, not via clicks)."""

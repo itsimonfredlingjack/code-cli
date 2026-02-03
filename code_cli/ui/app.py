@@ -266,11 +266,14 @@ class CodeApp(App):
 
     ComposerBar {
         dock: bottom;
-        height: 3;
+        height: auto;
+        min-height: 3;
         border-top: solid $border;
         background: $panel_raised;
-        padding: 0;
+        padding: 0 1;
         margin: 0;
+        overflow-x: hidden;
+        overflow-y: hidden;
     }
 
     ComposerBar:focus-within {
@@ -278,30 +281,28 @@ class CodeApp(App):
     }
 
     #composer-stack {
-        height: 3;
-        padding: 0 1;
+        height: auto;
+        padding: 0;
     }
 
     #hint-strip {
         height: 1;
-        color: $text_muted;
-        text-style: italic;
+        color: $text;
         padding: 0;
         margin: 0;
     }
 
     #composer-input {
-        height: 2;
-        border: solid $border;
-        background: $panel;
+        height: 1;
+        border: none;
+        background: transparent;
         color: $text;
-        padding: 0 1;
+        padding: 0;
         margin: 0;
     }
 
     #composer-input:focus {
-        border: solid $accent_cyan;
-        background: $panel_raised;
+        background: transparent;
     }
 
     .section-header {
@@ -344,6 +345,52 @@ class CodeApp(App):
 
     CodeBlockWidget:focus {
         border: solid $accent_cyan;
+    }
+
+    /* AgentMessageCard composite structure */
+    AgentMessageCard {
+        border: none;
+        border-left: tall $border;
+        background: $panel;
+        margin: 0;
+        padding: 1;
+        width: 100%;
+        height: auto;
+    }
+
+    AgentMessageCard:focus {
+        border-left: tall $accent_cyan;
+        background: $panel_raised;
+    }
+
+    AgentMessageCard.streaming {
+        border-left: tall $accent_cyan;
+    }
+
+    AgentMessageCard.error {
+        border-left: tall $danger;
+    }
+
+    AgentMessageCard .agent-card-header {
+        height: 1;
+        color: $text_muted;
+        padding: 0;
+        margin: 0 0 1 0;
+    }
+
+    AgentMessageCard .agent-card-content {
+        width: 100%;
+        height: auto;
+    }
+
+    AgentMessageCard .agent-card-text {
+        width: 100%;
+        height: auto;
+        margin: 0 0 1 0;
+    }
+
+    AgentMessageCard .agent-card-code {
+        margin: 1 0;
     }
     """
     )
@@ -988,12 +1035,15 @@ class CodeApp(App):
             self._active_card.toggle_collapse()
 
     def on_card_selected(self, message: CardSelected) -> None:
-        """Handle card selection."""
+        """Handle card selection - sets active card, updates inspector if already open."""
         self._active_card = message.card
         inspector = self.query_one(InspectorDrawer)
+
+        # Only update inspector content if it's already visible
+        # Don't auto-open it on every card click
         if not inspector._visible:
-            inspector.show()
-        
+            return
+
         from .cards import ToolResultCard, ToolCallCard
         if isinstance(message.card, (ToolResultCard, ToolCallCard)):
             inspector.show_tool(

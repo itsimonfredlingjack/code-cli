@@ -14,6 +14,8 @@ from textual import events
 from textual.binding import Binding
 from textual.reactive import reactive
 from textual.widget import Widget
+from textual.widgets import Static
+from textual.containers import Container, Vertical
 
 from .theme import COLORS, HUD, get_icon
 
@@ -66,23 +68,27 @@ class CodeBlockWidget(Widget):
 
 class BaseCard(Widget):
     """Base card component with common functionality."""
-    
+
     can_focus = True
     content = reactive("")
     collapsed = reactive(False)
-    
+
+    BINDINGS = [
+        Binding("y", "copy_content", "Copy"),
+    ]
+
     def __init__(self, title: str, content: str, **kwargs: object) -> None:
         super().__init__(**kwargs)
         self.title = title
         self.content = content
         self.timestamp = datetime.now()
-    
+
     def _truncate(self, text: str, limit: int = 14) -> str:
         lines = text.splitlines()
         if len(lines) <= limit:
             return text
         return "\n".join(lines[:limit]) + "\n..."
-    
+
     def toggle_collapse(self) -> None:
         self.collapsed = not self.collapsed
         self.refresh(layout=True)
@@ -92,6 +98,20 @@ class BaseCard(Widget):
         self.remove_class("streaming", "error", "warning", "success")
         if status in ("streaming", "error", "warning", "success"):
             self.add_class(status)
+
+    def action_copy_content(self) -> None:
+        """Copy card content to clipboard."""
+        import subprocess
+        import platform
+        try:
+            text = self.content
+            if platform.system() == "Darwin":
+                subprocess.run(["pbcopy"], input=text.encode(), check=True)
+            else:
+                subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode(), check=True)
+            self.app.notify("Copied to clipboard", severity="information")
+        except Exception:
+            self.app.notify("Copy failed - clipboard unavailable", severity="warning")
 
     def on_click(self, event: events.Click) -> None:
         from .widgets import CardSelected
@@ -120,28 +140,113 @@ class UserMessageCard(BaseCard):
         )
 
 
-class AgentMessageCard(BaseCard):
-    """Card for agent messages with streaming support."""
-    
+class AgentMessageCard(Container):
+    """Card for agent messages with streaming support and focusable code blocks."""
+
+    can_focus = True
+    collapsed = reactive(False)
+    content = reactive("")
     _streaming = reactive(False)
     _status = reactive("done")  # streaming, done, error
     _stream_buffer = ""
     _last_render_time = 0.0
     _render_throttle_ms = 33  # ~30 fps
-    
+    _content_container = None
+
+    BINDINGS = [
+        Binding("y", "copy_content", "Copy"),
+    ]
+
     def __init__(self, content: str = "", **kwargs: object) -> None:
-        super().__init__("AGENT", content, **kwargs)
+        super().__init__(**kwargs)
         self.role = "assistant"
+        self.content = content
         self._streaming = False
         self._status = "done"
         self._stream_buffer = ""
         self._last_render_time = 0.0
-    
+        self.timestamp = datetime.now()
+        self.title = "AGENT"
+        self._content_container = None
+
+    def compose(self):
+        """Yield child widgets for text and code blocks."""
+        # Header
+        yield Static(self._build_header(), classes="agent-card-header", id="agent-header")
+
+        # Content container - will hold dynamically updated children
+        content_container = Vertical(classes="agent-card-content", id="agent-content")
+        yield content_container
+
+    def on_mount(self) -> None:
+        """After mount, populate the content container with parsed content."""
+        self._content_container = self.query_one("#agent-content", Vertical)
+        self._rebuild_content()
+
+    def _rebuild_content(self) -> None:
+        """Rebuild the content container's children."""
+        if not self._content_container:
+            return
+
+        # Clear existing content children
+        self._content_container.remove_children()
+
+        # Parse and mount new children
+        body_content = self._truncate(self.content) if self.collapsed else self.content
+        parts = self._parse_content_with_code_blocks(body_content)
+
+        if not parts or (len(parts) == 1 and parts[0][0] == "text" and not parts[0][1]):
+            # Empty or no content
+            if self._status == "streaming":
+                self._content_container.mount(Static(Markdown("*Thinking...*"), classes="agent-card-text"))
+            else:
+                self._content_container.mount(Static("", classes="agent-card-text"))
+        else:
+            children = []
+            for i, part in enumerate(parts):
+                if part[0] == "text":
+                    if part[1]:
+                        children.append(Static(Markdown(part[1]), classes="agent-card-text"))
+                elif part[0] == "code":
+                    lang, code = part[1], part[2]
+                    children.append(CodeBlockWidget(code, lang, classes="agent-card-code"))
+
+            if children:
+                self._content_container.mount(*children)
+
+    def _build_header(self) -> Text:
+        """Build the header text with status indicator."""
+        time_str = self.timestamp.strftime("%H:%M")
+
+        # Status indicator (compact)
+        if self._status == "streaming":
+            status_icon = get_icon("spinner")
+            status_text = f"{status_icon} STREAMING"
+            status_color = COLORS["accent_cyan"]
+        elif self._status == "error":
+            status_icon = get_icon("error")
+            status_text = f"{status_icon} ERROR"
+            status_color = COLORS["danger"]
+        else:
+            status_icon = get_icon("done")
+            status_text = f"{status_icon} DONE"
+            status_color = COLORS["border"]
+
+        header = Text()
+        header.append(f"AGENT · {status_text} · {time_str}", style=status_color)
+        return header
+
+    def _truncate(self, text: str, limit: int = 14) -> str:
+        lines = text.splitlines()
+        if len(lines) <= limit:
+            return text
+        return "\n".join(lines[:limit]) + "\n..."
+
     def append(self, text: str) -> None:
         """Append text to stream buffer (throttled rendering)."""
         self._stream_buffer += text
         self._throttled_refresh()
-    
+
     def _throttled_refresh(self) -> None:
         """Refresh only if enough time has passed (throttle to ~30 fps)."""
         import time
@@ -151,14 +256,14 @@ class AgentMessageCard(BaseCard):
             self.content += self._stream_buffer
             self._stream_buffer = ""
             self._last_render_time = now
-            self.refresh(layout=False)
-    
+            self._rebuild_content()
+
     def start_streaming(self) -> None:
         """Mark card as streaming."""
         self._streaming = True
         self._status = "streaming"
         self._update_status_class("streaming")
-        self.refresh()
+        self._update_header()
 
     def stop_streaming(self) -> None:
         """Mark card as done streaming."""
@@ -169,7 +274,7 @@ class AgentMessageCard(BaseCard):
         self._streaming = False
         self._status = "done"
         self._update_status_class("done")
-        self.refresh()
+        self._rebuild_content()
 
     def mark_error(self) -> None:
         """Mark card as failed."""
@@ -180,7 +285,27 @@ class AgentMessageCard(BaseCard):
         self._streaming = False
         self._status = "error"
         self._update_status_class("error")
-        self.refresh()
+        self._rebuild_content()
+
+    def _update_status_class(self, status: str) -> None:
+        """Update CSS class based on status."""
+        self.remove_class("streaming", "error", "warning", "success")
+        if status in ("streaming", "error", "warning", "success"):
+            self.add_class(status)
+
+    def _update_header(self) -> None:
+        """Update just the header widget."""
+        try:
+            header_widget = self.query_one(".agent-card-header", Static)
+            if header_widget:
+                header_widget.update(self._build_header())
+        except Exception:
+            # Header not mounted yet
+            pass
+
+    def toggle_collapse(self) -> None:
+        self.collapsed = not self.collapsed
+        self._rebuild_content()
 
     def _parse_content_with_code_blocks(self, content: str) -> list:
         """Parse content and extract code blocks for special rendering."""
@@ -212,68 +337,23 @@ class AgentMessageCard(BaseCard):
 
         return parts if parts else [("text", content)]
 
-    def render(self) -> RenderableType:
-        from rich.console import Group
-
-        time_str = self.timestamp.strftime("%H:%M")
-
-        # Status indicator (compact)
-        if self._status == "streaming":
-            status_icon = get_icon("spinner")
-            status_text = f"{status_icon} STREAMING"
-        elif self._status == "error":
-            status_icon = get_icon("error")
-            status_text = f"{status_icon} ERROR"
-        else:
-            status_icon = get_icon("done")
-            status_text = f"{status_icon} DONE"
-
-        header = f"AGENT · {status_text} · {time_str}"
-        body_content = self._truncate(self.content) if self.collapsed else self.content
-
-        # Parse for code blocks
-        parts = self._parse_content_with_code_blocks(body_content)
-
-        # Build renderables
-        renderables = []
-        for part in parts:
-            if part[0] == "text":
-                if part[1]:
-                    renderables.append(Markdown(part[1]))
-            elif part[0] == "code":
-                lang, code = part[1], part[2]
-                # Code block header
-                code_header = Text()
-                code_header.append(f" {lang} ", style=f"on {COLORS['panel_raised']}")
-                renderables.append(code_header)
-                renderables.append(Syntax(code, lang, theme="monokai", word_wrap=True))
-
-        if not renderables:
-            if self._status == "streaming":
-                renderables = [Text("Thinking...", style=COLORS["text_muted"])]
+    def action_copy_content(self) -> None:
+        """Copy card content to clipboard."""
+        import subprocess
+        import platform
+        try:
+            text = self.content
+            if platform.system() == "Darwin":
+                subprocess.run(["pbcopy"], input=text.encode(), check=True)
             else:
-                renderables = [Text("")]
+                subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode(), check=True)
+            self.app.notify("Copied to clipboard", severity="information")
+        except Exception:
+            self.app.notify("Copy failed - clipboard unavailable", severity="warning")
 
-        # Combine renderables
-        body = Group(*renderables)
-
-        # Border color based on status
-        if self._status == "streaming":
-            border_color = COLORS["accent_cyan"]
-        elif self._status == "error":
-            border_color = COLORS["danger"]
-        else:
-            border_color = COLORS["border"]
-
-        return Panel(
-            body,
-            title=header,
-            title_align="left",
-            border_style=border_color,
-            box=HUD,
-            padding=(0, 0),
-            style=f"on {COLORS['panel']}",
-        )
+    def on_click(self, event: events.Click) -> None:
+        from .widgets import CardSelected
+        self.post_message(CardSelected(self))
 
 
 class ToolCallCard(BaseCard):
