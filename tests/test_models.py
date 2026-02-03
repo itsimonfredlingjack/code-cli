@@ -1,13 +1,9 @@
-from vibe_cli.models.messages import Message, Role, ToolCall
-from vibe_cli.models.tools import ToolDefinition, ToolParameter
+from code_cli.models.messages import Message, Role, ToolCall
+from code_cli.models.tools import ToolDefinition, ToolParameter
 
 
 def test_message_serialization():
-    msg = Message(
-        role=Role.USER,
-        content="Hello",
-        tool_calls=[ToolCall(id="1", name="test", arguments={"a": 1})]
-    )
+    msg = Message(role=Role.USER, content="Hello", tool_calls=[ToolCall(id="1", name="test", arguments={"a": 1})])
 
     json_str = msg.model_dump_json()
     loaded = Message.model_validate_json(json_str)
@@ -17,13 +13,12 @@ def test_message_serialization():
     assert loaded.tool_calls[0].name == "test"
     assert loaded.tool_calls[0].arguments["a"] == 1
 
+
 def test_tool_definition_schema():
     tool = ToolDefinition(
         name="read_file",
         description="Read a file",
-        parameters=[
-            ToolParameter(name="path", type="string", description="Path to file")
-        ]
+        parameters=[ToolParameter(name="path", type="string", description="Path to file")],
     )
 
     openai_schema = tool.to_openai_schema()

@@ -1,7 +1,6 @@
-
 import pytest
 
-from vibe_cli.tools.filesystem import ReadFileTool, WriteFileTool
+from code_cli.tools.filesystem import ReadFileTool, WriteFileTool
 
 
 @pytest.mark.asyncio
@@ -21,6 +20,7 @@ async def test_read_write_file(tmp_path):
     assert "Hello" in result.content
     assert "World" in result.content
     assert "   1 │ Hello" in result.content
+
 
 @pytest.mark.asyncio
 async def test_path_traversal(tmp_path):

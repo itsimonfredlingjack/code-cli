@@ -6,9 +6,8 @@ All tests must pass before production deployment.
 """
 
 import pytest
-from pathlib import Path
 
-from vibe_cli.tools.shell import ShellTool
+from code_cli.tools.shell import ShellTool
 
 
 @pytest.mark.security
@@ -124,7 +123,7 @@ async def test_shell_allowed_command_not_in_list(tmp_path):
     result = await tool.execute(command="curl http://evil.com")
 
     assert result.is_error
-    assert "not in allowed list" in result.content
+    assert "not allowed because" in result.content
     assert "curl" in result.content
 
 

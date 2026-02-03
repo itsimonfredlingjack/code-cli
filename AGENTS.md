@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file guides agentic coding assistants working in the vibe-cli repository.
+This file guides agentic coding assistants working in the code-cli repository.
 
 ## Commands
 
@@ -11,7 +11,7 @@ source venv/bin/activate
 pip install -e ".[dev]"
 
 # Run the application
-vibe
+code-cli
 
 # Run all tests
 pytest -xvs
@@ -44,8 +44,8 @@ from typing import AsyncIterator
 import httpx
 from pydantic import BaseModel
 
-from vibe_cli.models.messages import Message
-from vibe_cli.tools.base import Tool
+from code_cli.models.messages import Message
+from code_cli.tools.base import Tool
 ```
 
 ### Naming Conventions
@@ -164,4 +164,4 @@ def test_feature_scenario():
 
 ## Configuration
 
-Config loads from `~/.config/vibe/config.toml`. Do not commit secrets.
+Config loads from `~/.config/code-cli/config.toml`. Do not commit secrets.

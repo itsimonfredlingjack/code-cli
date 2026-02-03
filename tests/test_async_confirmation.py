@@ -2,12 +2,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from vibe_cli.agent.loop import AgentLoop
-from vibe_cli.config import AgentConfig
-from vibe_cli.models.messages import ToolCall, ToolResult
-from vibe_cli.models.tools import ToolDefinition
-from vibe_cli.providers.base import LLMProvider, StreamChunk
-from vibe_cli.tools.base import Tool, ToolRegistry
+from code_cli.agent.loop import AgentLoop
+from code_cli.config import AgentConfig
+from code_cli.models.messages import ToolCall, ToolResult
+from code_cli.models.tools import ToolDefinition
+from code_cli.providers.base import LLMProvider, StreamChunk
+from code_cli.tools.base import Tool, ToolRegistry
 
 
 class MockProvider(LLMProvider):
@@ -17,26 +17,19 @@ class MockProvider(LLMProvider):
 
     async def complete(self, messages, tools=None):
         # Simulate a tool call in the first chunk
-        yield StreamChunk(
-            tool_calls=[ToolCall(id="1", name="dangerous_tool", arguments={"force": True})],
-            done=False
-        )
+        yield StreamChunk(tool_calls=[ToolCall(id="1", name="dangerous_tool", arguments={"force": True})], done=False)
         yield StreamChunk(done=True)
 
     async def get_available_models(self):
         return ["mock-model"]
 
-    async def count_tokens(self, text: str) -> int:
+    def count_tokens(self, text: str) -> int:
         return len(text.split())
+
 
 class DangerousTool(Tool):
     def __init__(self):
-        self._def = ToolDefinition(
-            name="dangerous_tool",
-            description="Dangerous",
-            dangerous=True,
-            parameters=[]
-        )
+        self._def = ToolDefinition(name="dangerous_tool", description="Dangerous", dangerous=True, parameters=[])
 
     @property
     def definition(self) -> ToolDefinition:
@@ -44,6 +37,7 @@ class DangerousTool(Tool):
 
     async def execute(self, **kwargs) -> ToolResult:
         return ToolResult(tool_call_id="mock", content="Executed")
+
 
 @pytest.mark.asyncio
 async def test_agent_loop_confirmation_approved():
@@ -67,7 +61,7 @@ async def test_agent_loop_confirmation_approved():
     on_confirmation.assert_awaited_once_with("dangerous_tool", {"force": True})
 
     # Verify tool was executed
-    tool_results = [r for r in results if hasattr(r, 'tool_name') and r.tool_name == "dangerous_tool"]
+    tool_results = [r for r in results if hasattr(r, "tool_name") and r.tool_name == "dangerous_tool"]
     assert len(tool_results) == 1
     assert tool_results[0].content == "Executed"
 
@@ -93,6 +87,8 @@ async def test_agent_loop_confirmation_rejected():
     # Verify confirmation was called
     on_confirmation.assert_awaited_once_with("dangerous_tool", {"force": True})
 
-    # Verify tool was NOT executed (yielded)
-    tool_results = [r for r in results if hasattr(r, 'tool_name') and r.tool_name == "dangerous_tool"]
-    assert len(tool_results) == 0
+    # Verify rejected result was yielded so UI can show it
+    tool_results = [r for r in results if hasattr(r, "tool_name") and r.tool_name == "dangerous_tool"]
+    assert len(tool_results) == 1
+    assert tool_results[0].content == "User rejected tool execution"
+    assert tool_results[0].is_error is True

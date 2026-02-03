@@ -2,8 +2,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from vibe_cli.models.messages import Message, Role
-from vibe_cli.providers.openai_compat import OpenAICompatProvider
+from code_cli.models.messages import Message, Role
+from code_cli.providers.openai_compat import OpenAICompatProvider
 
 
 @pytest.mark.asyncio
@@ -17,7 +17,7 @@ async def test_openai_complete():
             'data: {"choices": [{"delta": {"content": "Hello"}}]}',
             'data: {"choices": [{"delta": {"content": " world"}}]}',
             'data: {"choices": [{"finish_reason": "stop"}]}',
-            'data: [DONE]'
+            "data: [DONE]",
         ]
         for line in lines:
             yield line

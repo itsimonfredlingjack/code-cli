@@ -5,10 +5,11 @@ HIGH PRIORITY: These tests validate protection against path traversal attacks (H
 Focuses on symlink attack vectors which are not fully covered in basic tests.
 """
 
-import pytest
 from pathlib import Path
 
-from vibe_cli.tools.filesystem import ReadFileTool, WriteFileTool, StrReplaceTool
+import pytest
+
+from code_cli.tools.filesystem import ReadFileTool, StrReplaceTool, WriteFileTool
 
 
 @pytest.mark.security

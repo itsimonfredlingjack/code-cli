@@ -1,5 +1,5 @@
 ---
-description: Development workflow for vibe-cli UI
+description: Development workflow for code-cli UI
 ---
 
 # Development Workflow
@@ -7,9 +7,9 @@ description: Development workflow for vibe-cli UI
 ## Running the App
 
 // turbo
-1. Launch vibe-cli in your terminal:
+1. Launch code-cli in your terminal:
 ```bash
-./.venv/bin/python3 -m vibe_cli
+./.venv/bin/python3 -m code_cli
 ```
 
 ## Hot-Reload Development
@@ -19,14 +19,14 @@ description: Development workflow for vibe-cli UI
 // turbo
 2. For rapid iteration, run with Python directly:
 ```bash
-./.venv/bin/python3 -c "from vibe_cli.ui.app import VibeApp; VibeApp().run()"
+./.venv/bin/python3 -c "from code_cli.ui.app import CodeApp; CodeApp().run()"
 ```
 
 ## Clearing Asset Cache
 
 If you modify ASCII art assets and want to see changes without restarting:
 ```python
-from vibe_cli.ui.assets.loader import clear_cache
+from code_cli.ui.assets.loader import clear_cache
 clear_cache()
 ```
 
@@ -38,6 +38,6 @@ The app has a DEFAULT_CSS fallback. If your CSS has errors:
 
 ## Common Issues
 
-- **"textual run" shows Textual demo**: Use `python -m vibe_cli` instead
+- **"textual run" shows Textual demo**: Use `python -m code_cli` instead
 - **CSS crashes**: Check for invalid properties like `z-index` (not supported)
-- **Assets not loading**: Verify files exist in `vibe_cli/ui/assets/`
+- **Assets not loading**: Verify files exist in `code_cli/ui/assets/`

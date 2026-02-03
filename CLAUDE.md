@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Vibe-CLI is an agentic AI coding assistant with a Textual TUI. It provides an interactive terminal interface for LLM-powered code manipulation with built-in security controls.
+Code-CLI is an agentic AI coding assistant with a Textual TUI. It provides an interactive terminal interface for LLM-powered code manipulation with built-in security controls.
 
 ## Commands
 
@@ -15,7 +15,7 @@ source venv/bin/activate
 pip install -e ".[dev]"
 
 # Run the application
-vibe
+code-cli
 
 # Run tests
 pytest -xvs
@@ -31,7 +31,7 @@ ruff format .
 ## Architecture
 
 ```
-vibe_cli/
+code_cli/
 ├── __main__.py          # Entry point
 ├── config.py            # TOML-based hierarchical config
 ├── agent/
@@ -50,7 +50,7 @@ vibe_cli/
 │   ├── shell.py         # ShellTool with allowlist/blocklist
 │   └── git.py           # GitStatus, GitAdd, GitCommit
 └── ui/
-    ├── app.py           # VibeApp (Textual TUI)
+    ├── app.py           # CodeApp (Textual TUI)
     ├── theme.py         # Neon color scheme and ASCII art
     └── widgets.py       # Chat, Avatar, TypingIndicator
 ```
@@ -73,14 +73,14 @@ vibe_cli/
 
 ### Configuration
 
-Config loads from `~/.config/vibe/config.toml` with sections:
+Config loads from `~/.config/code-cli/config.toml` with sections:
 - `provider`: API endpoint, model, tokens, key
 - `ui`: Theme, confirmations
 - `context`: Token limits, compression threshold (70%)
 - `shell`: Allowed commands, blocked patterns, timeout
 - `agent`: Max iterations, confirmation settings
 
-Default provider: Local model at `http://localhost:8080/v1` with `phi-4`
+Default provider: Ollama at `http://localhost:11434` with `llama3` (unless configured otherwise)
 
 ## Tool Security
 
@@ -96,7 +96,7 @@ Tools marked `dangerous=True` require user confirmation: `write_file`, `str_repl
 - `/clear` - Clear conversation
 - `/help` - Show available commands
 
-Checkpoints save to `.vibe/checkpoints/` with conversation JSON and tracked file copies.
+Checkpoints save to `.code-cli/checkpoints/` with conversation JSON and tracked file copies.
 
 ## Testing
 

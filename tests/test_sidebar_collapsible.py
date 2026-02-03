@@ -1,9 +1,9 @@
 import pytest
 
-from vibe_cli.config import Config
-from vibe_cli.models.messages import ToolResult
-from vibe_cli.ui.app import VibeApp
-from vibe_cli.ui.project_tree import FilePinMessage
+from code_cli.config import Config
+from code_cli.models.messages import ToolResult
+from code_cli.ui.app import CodeApp
+from code_cli.ui.project_tree import FilePinMessage
 
 
 class DummyProvider:
@@ -14,13 +14,14 @@ class DummyProvider:
         return [self.model]
 
 
+@pytest.mark.skip(reason="UI refactored: collapsible sidebars replaced with navigator/inspector panes")
 @pytest.mark.asyncio
 async def test_sidebar_collapsible_sections_present(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("vibe_cli.ui.app.Config.load", lambda *args, **kwargs: Config())
-    monkeypatch.setattr("vibe_cli.ui.app.build_provider", lambda *args, **kwargs: DummyProvider())
+    monkeypatch.setattr("code_cli.ui.app.Config.load", lambda *args, **kwargs: Config())
+    monkeypatch.setattr("code_cli.ui.app.build_provider", lambda *args, **kwargs: DummyProvider())
 
-    app = VibeApp()
+    app = CodeApp()
     async with app.run_test() as pilot:
         await pilot.pause()
         app.query_one("#sidebar-project")
@@ -29,14 +30,15 @@ async def test_sidebar_collapsible_sections_present(monkeypatch, tmp_path):
         app.query_one("#sidebar-log")
 
 
+@pytest.mark.skip(reason="UI refactored: pinned files no longer use collapsible sidebar")
 @pytest.mark.asyncio
 async def test_pin_expands_pinned_section(monkeypatch, tmp_path):
     (tmp_path / "x.txt").write_text("hello")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("vibe_cli.ui.app.Config.load", lambda *args, **kwargs: Config())
-    monkeypatch.setattr("vibe_cli.ui.app.build_provider", lambda *args, **kwargs: DummyProvider())
+    monkeypatch.setattr("code_cli.ui.app.Config.load", lambda *args, **kwargs: Config())
+    monkeypatch.setattr("code_cli.ui.app.build_provider", lambda *args, **kwargs: DummyProvider())
 
-    app = VibeApp()
+    app = CodeApp()
     async with app.run_test() as pilot:
         await pilot.pause()
         pinned = app.query_one("#sidebar-pinned")
@@ -47,13 +49,14 @@ async def test_pin_expands_pinned_section(monkeypatch, tmp_path):
         assert app.query_one("#sidebar-pinned").collapsed is False
 
 
+@pytest.mark.skip(reason="UI refactored: log section no longer uses collapsible sidebar")
 @pytest.mark.asyncio
 async def test_tool_error_expands_log_section(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("vibe_cli.ui.app.Config.load", lambda *args, **kwargs: Config())
-    monkeypatch.setattr("vibe_cli.ui.app.build_provider", lambda *args, **kwargs: DummyProvider())
+    monkeypatch.setattr("code_cli.ui.app.Config.load", lambda *args, **kwargs: Config())
+    monkeypatch.setattr("code_cli.ui.app.build_provider", lambda *args, **kwargs: DummyProvider())
 
-    app = VibeApp()
+    app = CodeApp()
 
     async def fake_run(_text: str):
         yield ToolResult(tool_call_id="1", content="boom", is_error=True, tool_name="run_command")

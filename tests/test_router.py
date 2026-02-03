@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from vibe_cli.providers.router import ModelRouter
+from code_cli.providers.router import ModelRouter
 
 
 @pytest.fixture
@@ -76,6 +76,7 @@ def test_router_count_tokens(mock_providers):
 @pytest.mark.asyncio
 async def test_router_complete(mock_providers):
     """Test completion delegates to current provider."""
+
     # Set up async mock
     async def mock_complete(*args, **kwargs):
         yield MagicMock(text="Hello")
