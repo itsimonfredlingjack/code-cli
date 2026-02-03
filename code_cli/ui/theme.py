@@ -4,44 +4,93 @@ from pygments.style import Style as PygmentsStyle
 from pygments.token import Comment, Error, Generic, Keyword, Name, Number, Operator, String
 from rich.box import ROUNDED
 
-# Neon HUD Palette (Crush-like)
+# Semantic Color Tokens (CODENTIC Theme)
 COLORS = {
-    "bg": "#0B0F14",
-    "surface": "#121823",
-    "surface_light": "#1C2432",
-    "surface_glow": "#18202D",
-    "primary": "#00E5FF",
-    "secondary": "#FF9D00",
-    "tertiary": "#7CFF6B",
-    "error": "#FF5D5D",
-    "warning": "#FFB020",
-    "success": "#3CFFB5",
-    "text": "#E6F0FF",
-    "text_dim": "#94A3B8",
-    "text_bright": "#F8FAFC",
-    "focus_ring": "#00E5FF",
-    "card_border": "#1F2A3A",
-    "card_shadow": "#081018",
+    # Backgrounds
+    "bg": "#0B0F13",              # Background base
+    "panel": "#121824",           # Panel surface
+    "panel_raised": "#18202D",   # Panel raised
+    "border": "#2B3646",         # Border
+    
+    # Text
+    "text": "#E8EEF6",           # Text primary
+    "text_muted": "#9AA7B5",     # Text muted
+    
+    # Accents
+    "accent_orange": "#EE9405",  # Orange accent (current vibe)
+    "accent_cyan": "#46C8FF",    # Cyan (activity/streaming)
+    "success": "#31D158",        # Green (success/apply)
+    "danger": "#FF453A",         # Red (error/danger)
+    
+    # Legacy compatibility (mapped to new tokens)
+    "surface": "#121824",         # Alias for panel
+    "surface_light": "#2B3646",  # Alias for border
+    "surface_glow": "#18202D",   # Alias for panel_raised
+    "primary": "#46C8FF",        # Alias for accent_cyan
+    "secondary": "#EE9405",      # Alias for accent_orange
+    "tertiary": "#31D158",       # Alias for success
+    "error": "#FF453A",          # Alias for danger
+    "warning": "#EE9405",        # Alias for accent_orange
+    "text_dim": "#9AA7B5",       # Alias for text_muted
+    "text_bright": "#E8EEF6",    # Alias for text
+    "focus_ring": "#46C8FF",     # Alias for accent_cyan
+    "card_border": "#2B3646",    # Alias for border
+    "card_shadow": "#0B0F13",    # Alias for bg
+}
+
+# Color Discipline Rules:
+# - accent_cyan: ONLY for active streaming/focus
+# - accent_orange: warnings, pending
+# - danger: errors
+# - success: completed successfully
+# - border: default/neutral
+
+STATUS_COLORS = {
+    "streaming": COLORS["accent_cyan"],
+    "pending": COLORS["accent_orange"],
+    "running": COLORS["accent_cyan"],
+    "done": COLORS["border"],
+    "ok": COLORS["success"],
+    "error": COLORS["danger"],
+    "warning": COLORS["accent_orange"],
+    "info": COLORS["text_muted"],
+}
+
+# Typography variants for consistent text styling
+TYPOGRAPHY = {
+    "title": f"bold {COLORS['text']}",
+    "subtitle": COLORS["text"],
+    "body": COLORS["text"],
+    "muted": COLORS["text_muted"],
+    "timestamp": f"dim {COLORS['text_muted']}",
 }
 
 CSS_VARS = f"""
+    /* Semantic tokens */
     $bg: {COLORS["bg"]};
+    $panel: {COLORS["panel"]};
+    $panel_raised: {COLORS["panel_raised"]};
+    $border: {COLORS["border"]};
+    
+    $text: {COLORS["text"]};
+    $text_muted: {COLORS["text_muted"]};
+    
+    $accent_orange: {COLORS["accent_orange"]};
+    $accent_cyan: {COLORS["accent_cyan"]};
+    $success: {COLORS["success"]};
+    $danger: {COLORS["danger"]};
+    
+    /* Legacy compatibility */
     $surface: {COLORS["surface"]};
     $surface_light: {COLORS["surface_light"]};
     $surface_glow: {COLORS["surface_glow"]};
-
     $primary: {COLORS["primary"]};
     $secondary: {COLORS["secondary"]};
     $tertiary: {COLORS["tertiary"]};
-
     $error: {COLORS["error"]};
     $warning: {COLORS["warning"]};
-    $success: {COLORS["success"]};
-
-    $text: {COLORS["text"]};
     $text_dim: {COLORS["text_dim"]};
     $text_bright: {COLORS["text_bright"]};
-
     $focus_ring: {COLORS["focus_ring"]};
     $card_border: {COLORS["card_border"]};
     $card_shadow: {COLORS["card_shadow"]};
@@ -50,6 +99,47 @@ CSS_VARS = f"""
 # --- STRUCTURAL ASSETS ---
 
 HUD = ROUNDED
+
+# --- ICONOGRAPHY (Nerd Font + ASCII fallbacks) ---
+
+ICONS = {
+    # Branch/Git
+    "branch": ("󰘬", "BR"),
+    "git": ("󰊢", "GIT"),
+    
+    # Model/LLM
+    "model": ("󰒼", "MODEL"),
+    "tokens": ("󰑲", "tks"),
+    
+    # Status
+    "queue": ("󰃃", "Q"),
+    "spinner": ("󰔚", "..."),
+    "done": ("󰄬", "[DONE]"),
+    "error": ("󰅖", "ERR"),
+    
+    # Tools
+    "tool": ("󰆍", "TOOL"),
+    "diff": ("󰀀", "DIFF"),
+    "file": ("󰈔", "FILE"),
+    
+    # Navigation
+    "search": ("󰍉", "/"),
+    "files": ("󰉋", "FILES"),
+    "sessions": ("󰨞", "SESS"),
+    "settings": ("󰒓", "SET"),
+    
+    # Actions
+    "approve": ("󰄬", "OK"),
+    "reject": ("󰜺", "X"),
+    "expand": ("󰁔", ">"),
+    "collapse": ("󰁍", "<"),
+}
+
+def get_icon(name: str) -> str:
+    """Get icon with Nerd Font fallback to ASCII."""
+    icon_pair = ICONS.get(name, ("?", "?"))
+    # For now, return ASCII fallback (can be enhanced to detect Nerd Font support)
+    return icon_pair[1]
 
 
 class CodeNeonStyle(PygmentsStyle):

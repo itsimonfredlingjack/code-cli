@@ -12,6 +12,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.widgets import Input, Label, ListItem, ListView
+from textual import events
 
 from code_cli.agent.loop import AgentLoop
 from code_cli.config import AgentConfig, Config
@@ -25,24 +26,26 @@ from code_cli.ui.event_bus import UIEventBus
 from code_cli.ui.events import UIEvent
 from code_cli.ui.project_tree import FilePinMessage
 
+from .cards import AgentMessageCard, DiffCard
+from .header import CodenticHeader
+from .layout import (
+    CenterPane,
+    ComposerBar,
+    InspectorDrawer,
+    LeftRail,
+    PinnedActivityBar,
+    TranscriptPane,
+)
 from .theme import CSS_VARS
 from .widgets import (
-    AgentHeader,
     ApprovalModal,
     ArmConfirmModal,
     ArmRequiredModal,
     CardSelected,
     ClearTranscriptModal,
     CommandPalette,
-    ComposerBar,
-    InspectorPane,
-    NavigatorPane,
-    OutputPane,
     PaletteCommand,
     SafeArmState,
-    StatusBar,
-    ToolCard,
-    TranscriptPane,
 )
 
 logger = logging.getLogger(__name__)
@@ -69,7 +72,7 @@ class CodeApp(App):
         + """
     Screen { background: $bg; color: $text; }
 
-    AgentHeader {
+    CodenticHeader {
         dock: top;
         height: 2;
         margin: 1 2 0 2;
@@ -79,115 +82,287 @@ class CodeApp(App):
         height: 1fr;
         width: 1fr;
         padding: 0 1 1 1;
+        overflow: hidden;
     }
 
     #main-row {
         height: 1fr;
         width: 1fr;
+        overflow: hidden;
     }
 
-    NavigatorPane {
-        width: 32;
-        min-width: 26;
-        background: $surface;
-        border: solid $surface_light;
+    LeftRail {
+        width: 4;
+        min-width: 4;
+        background: $panel;
+        border: solid $border;
         padding: 1;
+    }
+
+    LeftRail.expanded {
+        width: 26;
+        min-width: 26;
+    }
+
+    .rail-icon {
+        height: 1;
+        width: 100%;
+        text-align: center;
+        color: $text_muted;
+        padding: 0;
+        margin: 0;
+        border-left: wide transparent;
+    }
+
+    .rail-icon:hover {
+        color: $text;
+        background: $panel_raised;
+    }
+
+    .rail-icon.active {
+        color: $accent_cyan;
+        border-left: wide $accent_cyan;
+    }
+
+    .rail-expanded {
+        display: none;
+    }
+
+    LeftRail.expanded .rail-icon {
+        display: none;
+    }
+
+    LeftRail.expanded .rail-expanded {
+        display: block;
+    }
+
+    LeftRail.focus-locked {
+        width: 4 !important;
+        min-width: 4 !important;
+    }
+
+    LeftRail.focus-locked.expanded {
+        width: 4 !important;
+    }
+
+    Screen.focus-mode CodenticHeader {
+        /* In focus mode, header shows only essential items */
+    }
+
+    LeftRail.focus-locked {
+        width: 4 !important;
+        min-width: 4 !important;
+    }
+
+    LeftRail.focus-locked.expanded {
+        width: 4 !important;
+    }
+
+    Screen.focus-mode CodenticHeader {
+        /* Hide non-essential items in focus mode - keep only mode, model, CTX */
+    }
+
+    CenterPane {
+        width: 1fr;
+        height: 1fr;
+        background: $bg;
+        overflow: hidden;
+    }
+
+    PinnedActivityBar {
+        height: 1;
+        padding: 0 1;
+        margin: 0;
+        background: $panel;
+        border-bottom: solid $border;
+        display: none;
+    }
+
+    PinnedActivityBar.active {
+        display: block;
+    }
+
+    PinnedActivityBar:focus {
+        border-bottom: solid $accent_cyan;
     }
 
     TranscriptPane {
-        width: 1fr;
+        height: 1fr;
         background: $bg;
-        border: solid $surface_light;
+        padding: 0 1;
+        overflow-y: auto;
+    }
+
+    #transcript-list {
+        width: 100%;
+    }
+
+    CodeOutputPane {
+        height: 0;
+        background: $panel;
+        border-top: solid $border;
+        display: none;
         padding: 1;
     }
 
-    InspectorPane {
-        width: 38;
-        min-width: 32;
-        background: $surface;
-        border: solid $surface_light;
+    CodeOutputPane.expanded {
+        height: 30%;
+        min-height: 10;
+        display: block;
+    }
+
+    InspectorDrawer {
+        /* Overlay drawer - does not participate in layout */
+        display: none;
+        dock: right;
+        width: 45;
+        min-width: 30;
+        max-width: 60;
+        height: 100%;
+        background: $panel;
+        border-left: solid $border;
         padding: 1;
+        layer: overlay;
     }
 
-    NavigatorPane:focus {
-        border: solid $focus_ring;
+    InspectorDrawer.visible {
+        display: block;
     }
 
-    TranscriptPane:focus {
-        border: solid $focus_ring;
+    InspectorDrawer.fullscreen {
+        /* Small terminal fallback: full-screen modal */
+        dock: top;
+        width: 100%;
+        height: 100%;
     }
 
-    InspectorPane:focus {
-        border: solid $focus_ring;
+    InspectorDrawer:focus {
+        border-left: heavy $accent_cyan;
+    }
+
+    /* Tab styling */
+    TabbedContent > Tab {
+        color: $text_muted;
+    }
+
+    TabbedContent > Tab.--highlight {
+        color: $text;
+        text-style: underline;
+        background: $panel_raised;
+    }
+
+    TabbedContent > Tab:focus {
+        color: $accent_cyan;
+    }
+
+    /* Dim center slightly when drawer is open (very subtle) */
+    #main-row {
+        opacity: 1;
+    }
+
+    Screen.drawer-open #main-row {
+        opacity: 0.95;
+    }
+
+    ComposerBar {
+        dock: bottom;
+        height: 3;
+        border-top: solid $border;
+        background: $panel_raised;
+        padding: 0;
+        margin: 0;
+    }
+
+    ComposerBar:focus-within {
+        border-top: heavy $accent_cyan;
+    }
+
+    #composer-stack {
+        height: 3;
+        padding: 0 1;
+    }
+
+    #hint-strip {
+        height: 1;
+        color: $text_muted;
+        text-style: italic;
+        padding: 0;
+        margin: 0;
+    }
+
+    #composer-input {
+        height: 2;
+        border: solid $border;
+        background: $panel;
+        color: $text;
+        padding: 0 1;
+        margin: 0;
+    }
+
+    #composer-input:focus {
+        border: solid $accent_cyan;
+        background: $panel_raised;
     }
 
     .section-header {
-        color: $text_dim;
+        color: $text_muted;
         text-style: bold;
         margin-top: 1;
     }
 
     .card {
-        border: solid $card_border;
-        background: $surface;
-        margin-bottom: 1;
+        border: none;
+        border-left: tall $border;
+        background: $panel;
+        margin: 0;
+        padding: 0 1;
+        width: 100%;
+        height: auto;
     }
 
     .card:focus {
-        border: solid $focus_ring;
+        border-left: tall $accent_cyan;
+        background: $panel_raised;
     }
 
-
-    #output-pane {
-        dock: bottom;
-        height: 12;
-        background: $surface;
-        border-top: solid $surface_light;
-        padding: 0 1;
-        display: none;
-    }
-    
-    #output-pane.visible {
-        display: block;
+    .card.streaming {
+        border-left: tall $accent_cyan;
     }
 
-    #composer-bar {
-
-        dock: bottom;
-        height: auto;
-        border-top: solid $surface_light;
-        background: $surface;
-        padding: 0 1;
+    .card.error {
+        border-left: tall $danger;
     }
 
-    #composer-input {
-        height: 3;
-        border: none;
-        background: $surface_glow;
-        color: $text;
+    .card.warning {
+        border-left: tall $accent_orange;
     }
 
-    #composer-input:focus {
-        border: none;
+    CodeBlockWidget {
+        margin: 1 0;
+        border: solid $border;
     }
 
-    StatusBar {
-        color: $text_dim;
-        padding: 0 1;
+    CodeBlockWidget:focus {
+        border: solid $accent_cyan;
     }
     """
     )
 
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),
-        Binding("ctrl+k", "command_palette", "Palette"),
+        Binding("ctrl+shift+p", "command_palette", "Palette", priority=True),
+        Binding("f", "focus_mode", "Focus Mode"),
+        Binding("ctrl+b", "toggle_rail", "Toggle Rail"),
+        Binding("ctrl+i", "toggle_inspector", "Inspector", priority=True),
+        Binding("ctrl+\\", "toggle_inspector", "Inspector (alt)", priority=True),
+        Binding("ctrl+alt+left", "resize_drawer_left", "Drawer ←"),
+        Binding("ctrl+alt+right", "resize_drawer_right", "Drawer →"),
         Binding("tab", "focus_next", "Focus Next"),
         Binding("shift+tab", "focus_previous", "Focus Prev"),
-        Binding("ctrl+1", "focus_navigator", "Navigator"),
+        Binding("ctrl+1", "focus_rail", "Rail"),
         Binding("ctrl+2", "focus_transcript", "Transcript"),
         Binding("ctrl+3", "focus_inspector", "Inspector"),
         Binding("ctrl+4", "focus_composer", "Composer"),
-        Binding("ctrl+j", "toggle_output", "Output"),
         Binding("ctrl+.", "toggle_mode", "SAFE/ARMED"),
         Binding("ctrl+e", "expand_collapse_card", "Expand/Collapse"),
         Binding("ctrl+l", "clear_transcript", "Clear"),
@@ -227,7 +402,7 @@ class CodeApp(App):
 
         self.event_bus = UIEventBus()
         self._stream_buffer = ""
-        self._stream_card = None
+        self._stream_card: AgentMessageCard | None = None
         self._active_card = None
         self._thinking = False
         self._processing = False
@@ -235,17 +410,23 @@ class CodeApp(App):
         self._pinned_files: list[str] = []
         self.safety_state = SafeArmState.SAFE
         self._palette_commands = self._build_palette_commands()
+        self._focus_mode = False
+        self._tokens_received = 0
+        self._stream_start_time = 0.0
+        self._last_tokens_per_sec_update = 0.0
 
     def _build_palette_commands(self) -> list[PaletteCommand]:
         return [
             PaletteCommand("toggle_mode", "Toggle SAFE/ARMED", "Enable or disable tool execution"),
             PaletteCommand("clear_transcript", "Clear transcript", "Remove all cards"),
-            PaletteCommand("focus_navigator", "Focus navigator", "Jump to left pane"),
-            PaletteCommand("focus_transcript", "Focus transcript", "Jump to middle pane"),
-            PaletteCommand("focus_inspector", "Focus inspector", "Jump to right pane"),
+            PaletteCommand("focus_rail", "Focus rail", "Jump to left rail"),
+            PaletteCommand("focus_transcript", "Focus transcript", "Jump to transcript"),
+            PaletteCommand("focus_inspector", "Focus inspector", "Open inspector drawer"),
             PaletteCommand("focus_composer", "Focus composer", "Jump to input"),
-            PaletteCommand("toggle_output", "Toggle Output", "Show/Hide global output drawer"),
-            PaletteCommand("show_help", "Show help", "Open help tab"),
+            PaletteCommand("toggle_inspector", "Toggle Inspector", "Show/Hide inspector drawer"),
+            PaletteCommand("toggle_rail", "Toggle Rail", "Expand/Collapse left rail"),
+            PaletteCommand("focus_mode", "Focus Mode", "Enter distraction-free mode"),
+            PaletteCommand("show_keys", "Show Keys", "Display keybindings"),
         ]
 
     async def _handle_confirmation(self, tool_name: str, arguments: dict) -> bool:
@@ -345,49 +526,78 @@ class CodeApp(App):
         - Loading tool plugins.
         - Checking provider health.
         """
+        # Mount InspectorDrawer as Screen-level overlay (not in layout tree)
+        inspector = InspectorDrawer(id="inspector-drawer")
+        self.mount(inspector)
+        # Styles are set via CSS (dock: right, layer: overlay, display: none)
+        
         self.set_interval(10.0, self._poll_models)
         self.set_interval(0.05, self._drain_events)
         self.set_interval(0.05, self._flush_stream)
+        self.set_interval(0.5, self._update_header_metrics)
+        self.set_interval(1.0, self._update_activity_elapsed)
         self.run_worker(self._load_plugins(), group="plugins")
         self.run_worker(self._check_provider_health(), group="health")
-        self._sync_status_bar()
+        self._sync_header()
         self._sync_sessions()
+        
+        # Force focus on input on mount
+        self.set_focus(self.query_one("#composer-input", Input))
+        
+        # Show empty state if transcript is empty
+        transcript = self.query_one(TranscriptPane)
+        if not transcript.card_children():
+            transcript.show_empty_state()
 
     async def _check_provider_health(self) -> None:
         try:
             models = await self.provider.get_available_models()
             if not models:
                 transcript = self.query_one(TranscriptPane)
-                transcript.add_message(
-                    "system", "Warning: No models found in Ollama. Run: ollama pull llama3"
+                transcript.add_system_message(
+                    "No models found in Ollama. Run: ollama pull llama3",
+                    level="warning"
                 )
             keep_alive = getattr(self.provider, "keep_alive", None)
             if keep_alive == 0:
                 transcript = self.query_one(TranscriptPane)
-                transcript.add_message(
-                    "system",
-                    "Note: keep_alive=0 — model reloads from disk every request (slow). "
+                transcript.add_system_message(
+                    "keep_alive=0 — model reloads from disk every request. "
                     "Set keep_alive=-1 in config.toml for faster responses.",
+                    level="info"
                 )
         except Exception as e:
             logger.warning("Provider health check failed: %s", e)
             transcript = self.query_one(TranscriptPane)
-            transcript.add_message(
-                "system", f"Warning: Cannot reach LLM provider ({e}). Is it running?"
+            transcript.add_system_message(
+                f"Cannot reach LLM provider ({e}). Is it running?",
+                level="warning"
             )
 
     async def _load_plugins(self) -> None:
         await asyncio.to_thread(self.tools.register_plugins, self.workspace)
+
+    def _update_header_metrics(self) -> None:
+        """Update header metrics periodically."""
+        self._sync_header()
+
+    def _update_activity_elapsed(self) -> None:
+        """Update activity bar elapsed time periodically."""
+        try:
+            activity_bar = self.query_one(PinnedActivityBar)
+            activity_bar.tick_elapsed()
+        except Exception:
+            pass
 
     async def _poll_models(self) -> None:
         try:
             models = await self.provider.get_available_models()
             if models:
                 new_model = models[0]
-                header = self.query_one(AgentHeader)
+                header = self.query_one(CodenticHeader)
                 if header.model != new_model:
                     header.model = new_model
-                    self._sync_status_bar()
+                    self._sync_header()
         except Exception:
             pass
 
@@ -396,37 +606,51 @@ class CodeApp(App):
         Compose the UI layout.
 
         Yields:
-            Widgets: The hierarchical structure of widgets (Header, Navigator, Transcript, Inspector, Composer).
+            Widgets: The hierarchical structure of widgets (Header, LeftRail, CenterPane, Composer).
+            Note: InspectorDrawer is mounted as overlay in on_mount().
         """
-        yield AgentHeader()
+        yield CodenticHeader(id="header")
 
         with Container(id="layout-root"):
-            with Vertical():
-                with Horizontal(id="main-row"):
-                    yield NavigatorPane(self.workspace, id="navigator")
-                    yield TranscriptPane(id="transcript")
-                    yield InspectorPane(id="inspector")
-                yield OutputPane(id="output-pane")
-                with Container(id="composer-bar"):
-                    yield ComposerBar()
+            with Horizontal(id="main-row"):
+                yield LeftRail(self.workspace, id="left-rail")
+                yield CenterPane(id="center-pane")
+        
+        yield ComposerBar(id="composer-bar")
 
     def _sync_sessions(self) -> None:
-        navigator = self.query_one(NavigatorPane)
-        sessions = navigator.query_one("#sessions", ListView)
-        sessions.remove_children()
-        sessions.mount(ListItem(Label("default")))
+        # Sessions are handled in LeftRail now
+        pass
 
-    def _sync_status_bar(self) -> None:
-        status_bar = self.query_one(StatusBar)
-        status_bar.mode = self.safety_state.value
-        status_bar.provider = self.config.default_provider
-        status_bar.model = getattr(self.provider, "model", "unknown")
-        branch = self._current_branch()
-        status_bar.branch = branch
-        status_bar.ctx_pct = self._context_pct()
-        header = self.query_one(AgentHeader)
-        header.branch = branch
+    def _sync_header(self) -> None:
+        """Update header with current state."""
+        header = self.query_one(CodenticHeader)
+        header.mode = self.safety_state.value
         header.model = getattr(self.provider, "model", "unknown")
+        header.branch = self._current_branch()
+        header.ctx_pct = self._context_pct()
+        header.ctx_used = self.agent.conversation.total_tokens
+        header.ctx_max = self.config.context.max_tokens
+        header.queue_count = len(self._pending_diffs) if hasattr(self, "_pending_diffs") else 0
+        header.is_active = self._processing or self._thinking
+        
+        # Update tokens/sec (throttled)
+        import time
+        now = time.time()
+        if self._stream_start_time > 0 and now - self._last_tokens_per_sec_update > 0.5:
+            elapsed = now - self._stream_start_time
+            if elapsed > 0:
+                header.tokens_per_sec = self._tokens_received / elapsed
+            self._last_tokens_per_sec_update = now
+        elif self._stream_start_time == 0:
+            header.tokens_per_sec = 0.0
+        
+        # Calculate latency (time from request start to first token)
+        if self._stream_start_time > 0 and self._tokens_received > 0:
+            # Approximate latency as time to first token
+            header.latency_ms = int((self._last_tokens_per_sec_update - self._stream_start_time) * 1000) if self._last_tokens_per_sec_update > 0 else 0
+        else:
+            header.latency_ms = 0
 
     def _current_branch(self) -> str:
         try:
@@ -454,21 +678,33 @@ class CodeApp(App):
 
         self._processing = True
         transcript = self.query_one(TranscriptPane)
+        
+        # Remove empty state if present
+        transcript.remove_empty_state()
+        
         self._active_card = transcript.add_message("user", text)
-        self._stream_card = transcript.add_message("assistant", "Thinking...")
+        self._stream_card = transcript.add_message("assistant", "")
+        self._stream_card.start_streaming()
         self._active_card = self._stream_card
         self._thinking = True
+        
+        # Reset streaming metrics
+        import time
+        self._stream_start_time = time.time()
+        self._tokens_received = 0
+        
+        # Start activity bar
+        activity_bar = self.query_one(PinnedActivityBar)
+        activity_bar.start_activity("Processing request...")
+        
         await self.event_bus.publish(self._event("status", {"status": "processing"}, "ui"))
         self.run_worker(self.process(text))
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id != "composer-input":
             return
-        status_bar = self.query_one(StatusBar)
-        if event.value:
-            status_bar.status = "typing"
-        else:
-            status_bar.status = "ready"
+        # Hint strip visibility is handled by ComposerBar itself
+        pass
 
     async def process(self, text: str) -> None:
         """
@@ -532,11 +768,11 @@ class CodeApp(App):
         Periodically drain events from the UIEventBus and update UI components.
 
         Handles:
-        - "message": Appends text to the assistant's response stream.
+        - "message": Appends text to the assistant's response stream (throttled).
         - "tool_result": Adds tool execution cards to the transcript and updates the inspector.
         - "stream_end": Finalizes the current streaming response.
-        - "status": Updates the status bar (e.g., "processing", "ready").
-        - "context": Updates the context percentage usage in the status bar and inspector.
+        - "status": Updates activity bar and header.
+        - "context": Updates the context percentage usage in header and inspector.
         - "diff": Shows diff previews in the inspector.
         """
         try:
@@ -545,20 +781,20 @@ class CodeApp(App):
                 return
 
             transcript = self.query_one(TranscriptPane)
-            inspector = self.query_one(InspectorPane)
-            status_bar = self.query_one(StatusBar)
-            navigator = self.query_one(NavigatorPane)
+            inspector = self.query_one(InspectorDrawer)
+            activity_bar = self.query_one(PinnedActivityBar)
 
             for event in events:
                 if event.type == "message":
                     if event.payload.get("role") == "assistant":
                         delta = event.payload.get("delta", "")
+                        self._tokens_received += len(delta.split())  # Rough token count
                         if self._thinking and self._stream_card:
-                            self._stream_card.content = ""
                             self._thinking = False
                         self._stream_buffer += delta
                         if self._stream_card is None:
                             self._stream_card = transcript.add_message("assistant", "")
+                            self._stream_card.start_streaming()
                             self._active_card = self._stream_card
 
                 elif event.type == "tool_result":
@@ -567,36 +803,53 @@ class CodeApp(App):
                     content = event.payload.get("content", "")
                     is_error = event.payload.get("is_error", False)
                     arguments = event.payload.get("arguments")
-                    card = transcript.add_tool(tool_name, arguments, content, is_error)
+                    
+                    # If this is a system failure, mark the streaming card as error
+                    if is_error and tool_name == "system" and self._stream_card:
+                        self._fail_streaming(content)
+                        activity_bar.stop_activity()
+                        inspector.append_log(f"\n--- SYSTEM ERROR ---\n{content}\n")
+                        continue
+                    
+                    # Add tool result card
+                    card = transcript.add_tool_result(tool_name, arguments, content, is_error)
                     self._active_card = card
                     self._stream_card = None
                     self._thinking = False
 
-                    tool_runs = navigator.query_one("#tool-runs", ListView)
-                    tool_runs.mount(ListItem(Label(f"{tool_name} ({'ERR' if is_error else 'OK'})")))
+                    # Update activity bar
+                    activity_bar.stop_activity()
 
                     diff_text = self._pending_diffs.pop(0) if self._pending_diffs else ""
-                    inspector.show_diff(diff_text)
+                    if diff_text:
+                        inspector.show_diff(diff_text)
                     inspector.show_tool(tool_name, arguments, content)
 
-                    # Also log to output pane
-                    out_pane = self.query_one(OutputPane)
-                    out_pane.append(f"\n--- TOOL: {tool_name} ---\n{content}\n")
-
+                    # Append to inspector logs
+                    inspector.append_log(f"\n--- TOOL: {tool_name} ---\n{content}\n")
 
                 elif event.type == "stream_end":
                     self._flush_stream_buffer(transcript)
+                    if self._stream_card:
+                        self._stream_card.stop_streaming()
                     self._stream_card = None
                     self._thinking = False
+                    activity_bar.stop_activity()
+                    self._stream_start_time = 0.0
+                    self._tokens_received = 0
 
                 elif event.type == "status":
-                    status_bar.status = event.payload.get("status", "ready")
+                    status = event.payload.get("status", "ready")
+                    if status == "processing":
+                        activity_bar.start_activity("Processing...")
+                    elif status == "ready":
+                        activity_bar.stop_activity()
 
                 elif event.type == "context":
                     ctx_pct = event.payload.get("ctx_pct", 0)
                     pinned = event.payload.get("pinned", [])
-                    status_bar.ctx_pct = ctx_pct
                     inspector.show_context(pinned, ctx_pct)
+                    self._sync_header()
 
                 elif event.type == "plan":
                     content = event.payload.get("content", "")
@@ -604,17 +857,30 @@ class CodeApp(App):
                         transcript.add_plan(content)
 
                 elif event.type == "diff":
-                    inspector.show_diff(event.payload.get("diff", ""))
+                    diff_text = event.payload.get("diff", "")
+                    if diff_text:
+                        inspector.show_diff(diff_text)
         except Exception:
             logger.exception("_drain_events failed")
 
     def _flush_stream_buffer(self, transcript: TranscriptPane) -> None:
+        """Flush stream buffer to card (throttled by card's append method)."""
         if self._stream_card and self._stream_buffer:
             self._stream_card.append(self._stream_buffer)
             self._stream_buffer = ""
-            transcript.scroll_end(animate=False)
+            # Only scroll if user is at bottom (handled by TranscriptPane)
+
+    def _fail_streaming(self, error_text: str) -> None:
+        """Mark the active streaming card as error and append error text."""
+        if self._stream_card:
+            if error_text:
+                self._stream_card.append(f"\n{error_text}")
+            self._stream_card.mark_error()
+        self._stream_card = None
+        self._thinking = False
 
     async def _flush_stream(self) -> None:
+        """Periodically flush stream buffer."""
         try:
             if not self._stream_buffer or not self._stream_card:
                 return
@@ -626,17 +892,19 @@ class CodeApp(App):
     async def action_clear_transcript(self) -> None:
         """Clear conversation history with confirmation modal (bound to Ctrl+L)"""
         transcript = self.query_one(TranscriptPane)
-        message_count = len(transcript.query("Card"))
+        # Count cards (excluding empty state)
+        from .cards import EmptyStateCard
+        cards = [c for c in transcript.card_children() if not isinstance(c, EmptyStateCard)]
+        message_count = len(cards)
 
         if message_count == 0:
-            # Nothing to clear
             return
 
-        # Show confirmation modal
         confirmed = await self.push_screen_wait(ClearTranscriptModal(message_count))
 
         if confirmed:
-            transcript.remove_children()
+            transcript.clear_cards()
+            transcript.show_empty_state()
             self._stream_buffer = ""
             self._stream_card = None
             self._thinking = False
@@ -663,13 +931,23 @@ class CodeApp(App):
             self.action_toggle_output()
             self.action_focus_composer()
         elif command_id == "show_help":
-            inspector = self.query_one(InspectorPane)
-            inspector.show_help()
+            # Help functionality can be added later if needed
+            pass
 
+    def action_focus_rail(self) -> None:
+        """Focus the left rail (bound to Ctrl+1)."""
+        rail = self.query_one(LeftRail)
+        rail.focus()
+    
+    def action_toggle_rail(self) -> None:
+        """Toggle rail expansion (bound to Ctrl+B)."""
+        rail = self.query_one(LeftRail)
+        rail.toggle()
+    
     def action_focus_navigator(self) -> None:
-        navigator = self.query_one(NavigatorPane)
-        tree = navigator.query_one("#project-tree")
-        tree.focus()
+        # Navigator is now part of LeftRail
+        rail = self.query_one(LeftRail)
+        rail.focus()
 
     # Note: action_focus_next and action_focus_previous are inherited from textual.app.App
     # They call self.screen.focus_next() and self.screen.focus_previous() respectively
@@ -679,7 +957,9 @@ class CodeApp(App):
         transcript.focus()
 
     def action_focus_inspector(self) -> None:
-        inspector = self.query_one(InspectorPane)
+        inspector = self.query_one(InspectorDrawer)
+        if not inspector._visible:
+            inspector.show()
         inspector.focus()
 
     def action_focus_composer(self) -> None:
@@ -687,41 +967,63 @@ class CodeApp(App):
 
 
     def action_toggle_output(self) -> None:
-        pane = self.query_one(OutputPane)
-        pane.toggle_class("visible")
-        if pane.has_class("visible"):
+        pane = self.query_one(CodeOutputPane)
+        pane.toggle()
+        if pane.has_class("expanded"):
             pane.focus()
 
     async def action_toggle_mode(self) -> None:
+        """Toggle SAFE/ARMED mode."""
         if self.safety_state == SafeArmState.SAFE:
             approved = await self.push_screen_wait(ArmConfirmModal())
             if approved:
                 self.safety_state = SafeArmState.ARMED
         else:
             self.safety_state = SafeArmState.SAFE
-        self._sync_status_bar()
+        self._sync_header()
 
     def action_expand_collapse_card(self) -> None:
+        """Expand/collapse active card."""
         if self._active_card:
             self._active_card.toggle_collapse()
 
     def on_card_selected(self, message: CardSelected) -> None:
+        """Handle card selection."""
         self._active_card = message.card
-        inspector = self.query_one(InspectorPane)
-        if isinstance(message.card, ToolCard):
-            inspector.show_tool(message.card.tool_name, message.card.arguments, message.card.content)
+        inspector = self.query_one(InspectorDrawer)
+        if not inspector._visible:
+            inspector.show()
+        
+        from .cards import ToolResultCard, ToolCallCard
+        if isinstance(message.card, (ToolResultCard, ToolCallCard)):
+            inspector.show_tool(
+                message.card.tool_name,
+                getattr(message.card, "arguments", None),
+                getattr(message.card, "content", ""),
+            )
+        elif isinstance(message.card, DiffCard):
+            inspector.show_diff(message.card._full_diff)
         else:
-            inspector.show_help()
+            inspector.show_context(self._pinned_files, self._context_pct())
 
+    def on_mouse_down(self, event: events.MouseDown) -> None:
+        """Global right-click prevention - stop propagation for button 3."""
+        # If you want to kill right-click (or non-left clicks), stop them here.
+        if event.button != 1:  # Not left-click
+            event.stop()
+            return
+        # Do NOT call super().on_mouse_down; App has no such method.
+        # Allow normal propagation by doing nothing.
+        return
+    
     def on_file_pin_message(self, message: FilePinMessage) -> None:
+        """Handle file pin message."""
         path = message.path
         if str(path) not in self._pinned_files:
             self._pinned_files.append(str(path))
-        navigator = self.query_one(NavigatorPane)
-        pinned = navigator.query_one("#pinned-files")
-        pinned.set_pins([Path(p) for p in self._pinned_files])
-        inspector = self.query_one(InspectorPane)
+        inspector = self.query_one(InspectorDrawer)
         inspector.show_context(self._pinned_files, self._context_pct())
+        self._sync_header()
 
     def _event(self, event_type: str, payload: dict, source: str) -> UIEvent:
         return UIEvent(
