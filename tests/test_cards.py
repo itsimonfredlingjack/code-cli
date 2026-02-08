@@ -21,7 +21,11 @@ def test_system_card_renders_without_streaming():
     # Render to text for assertion
     rendered_str = _render_to_text(rendered)
     assert "STREAMING" not in rendered_str
-    assert "WARNING" in rendered_str
+    assert "SYSTEM" in rendered_str
+    # Expanded rendering shows WARNING level
+    card.collapsed = False
+    expanded_str = _render_to_text(card.render())
+    assert "WARNING" in expanded_str
 
 
 def test_system_card_levels():

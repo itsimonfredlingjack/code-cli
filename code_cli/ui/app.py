@@ -2,20 +2,21 @@
 
 import asyncio
 import logging
+import re
 import uuid
 from difflib import unified_diff
 from pathlib import Path
 
 import aiofiles
 from git import InvalidGitRepositoryError, Repo
+from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical
-from textual.widgets import Input, Label, ListItem, ListView
-from textual import events
+from textual.containers import Container, Horizontal
+from textual.widgets import Input
 
 from code_cli.agent.loop import AgentLoop
-from code_cli.config import AgentConfig, Config
+from code_cli.config import Config
 from code_cli.providers.factory import build_provider
 from code_cli.tools.base import ToolRegistry
 from code_cli.tools.cloud import AWSResourceLister, K8sLogFetcher
@@ -26,47 +27,45 @@ from code_cli.ui.event_bus import UIEventBus
 from code_cli.ui.events import UIEvent
 from code_cli.ui.project_tree import FilePinMessage
 
-from .cards import AgentMessageCard, DiffCard
+from .cards import ActionCard, AgentMessageCard, DiffCard
 from .header import CodenticHeader
 from .layout import (
     CenterPane,
     ComposerBar,
-    InspectorDrawer,
+    ContextWidget,
+    DiffDrawer,
     LeftRail,
+    LogsDrawer,
     PinnedActivityBar,
     TranscriptPane,
 )
 from .theme import CSS_VARS
 from .widgets import (
-    ApprovalModal,
+    ApprovalCategoryTracker,
     ArmConfirmModal,
     ArmRequiredModal,
     CardSelected,
     ClearTranscriptModal,
     CommandPalette,
+    DecisionModal,
     PaletteCommand,
     SafeArmState,
 )
 
 logger = logging.getLogger(__name__)
 
+# Verify tool detection patterns
+VERIFY_PATTERNS = re.compile(r"\b(pytest|npm\s+test|ruff|cargo\s+test|jest|vitest|mypy|tox)\b", re.IGNORECASE)
+
 
 class CodeApp(App):
     """
     Main Application class for Code CLI TUI.
 
-    This class manages the lifecycle of the Textual application, including layout composition,
-    event handling, agent loop integration, and user interaction.
-
-    Attributes:
-        workspace (Path): The root directory of the current project.
-        config (Config): Loaded configuration for the application.
-        tools (ToolRegistry): Registry of available tools (filesystem, git, shell, etc.).
-        provider (LLMProvider): The configured LLM provider (Ollama, OpenAI, etc.).
-        agent (AgentLoop): The core logic loop handling agent-user interaction.
-        event_bus (UIEventBus): Bus for decoupled communication between components.
-        safety_state (SafeArmState): Current security mode (SAFE or ARMED).
+    Agentic cockpit UI with compact badge timeline, dual drawers (Diff + Logs),
+    3-way approval flow, and agent status machine.
     """
+
     CSS = (
         CSS_VARS
         + """
@@ -145,28 +144,22 @@ class CodeApp(App):
         width: 4 !important;
     }
 
-    Screen.focus-mode CodenticHeader {
-        /* In focus mode, header shows only essential items */
-    }
-
-    LeftRail.focus-locked {
-        width: 4 !important;
-        min-width: 4 !important;
-    }
-
-    LeftRail.focus-locked.expanded {
-        width: 4 !important;
-    }
-
-    Screen.focus-mode CodenticHeader {
-        /* Hide non-essential items in focus mode - keep only mode, model, CTX */
-    }
-
     CenterPane {
         width: 1fr;
         height: 1fr;
         background: $bg;
         overflow: hidden;
+    }
+
+    ContextWidget {
+        height: 1;
+        padding: 0 1;
+        background: $panel;
+        border-bottom: solid $border;
+    }
+
+    ContextWidget:focus {
+        border-bottom: solid $accent_cyan;
     }
 
     PinnedActivityBar {
@@ -211,11 +204,11 @@ class CodeApp(App):
         display: block;
     }
 
-    InspectorDrawer {
-        /* Overlay drawer - does not participate in layout */
+    /* Dual drawer system */
+    DiffDrawer {
         display: none;
         dock: right;
-        width: 45;
+        width: 50;
         min-width: 30;
         max-width: 60;
         height: 100%;
@@ -225,42 +218,45 @@ class CodeApp(App):
         layer: overlay;
     }
 
-    InspectorDrawer.visible {
+    DiffDrawer.visible {
         display: block;
     }
 
-    InspectorDrawer.fullscreen {
-        /* Small terminal fallback: full-screen modal */
-        dock: top;
-        width: 100%;
-        height: 100%;
-    }
-
-    InspectorDrawer:focus {
+    DiffDrawer:focus {
         border-left: heavy $accent_cyan;
     }
 
-    /* Tab styling */
-    TabbedContent > Tab {
-        color: $text_muted;
+    LogsDrawer {
+        display: none;
+        dock: right;
+        width: 50;
+        min-width: 30;
+        max-width: 60;
+        height: 100%;
+        background: $panel;
+        border-left: solid $border;
+        padding: 1;
+        layer: overlay;
     }
 
-    TabbedContent > Tab.--highlight {
-        color: $text;
-        text-style: underline;
+    LogsDrawer.visible {
+        display: block;
+    }
+
+    LogsDrawer:focus {
+        border-left: heavy $accent_cyan;
+    }
+
+    #logs-filter {
+        height: 1;
+        border: solid $border;
         background: $panel_raised;
+        margin: 0 0 1 0;
     }
 
-    TabbedContent > Tab:focus {
-        color: $accent_cyan;
-    }
-
-    /* Dim center slightly when drawer is open (very subtle) */
-    #main-row {
-        opacity: 1;
-    }
-
-    Screen.drawer-open #main-row {
+    /* Dim center when drawer open */
+    Screen.diff-drawer-open #main-row,
+    Screen.logs-drawer-open #main-row {
         opacity: 0.95;
     }
 
@@ -311,6 +307,7 @@ class CodeApp(App):
         margin-top: 1;
     }
 
+    /* Compact badge card styling */
     .card {
         border: none;
         border-left: tall $border;
@@ -336,6 +333,19 @@ class CodeApp(App):
 
     .card.warning {
         border-left: tall $accent_orange;
+    }
+
+    .card.success {
+        border-left: tall $success;
+    }
+
+    /* Tool action cards - visually secondary */
+    .card.tool-action {
+        opacity: 0.8;
+    }
+
+    .card.tool-action:focus {
+        opacity: 1.0;
     }
 
     CodeBlockWidget {
@@ -397,22 +407,22 @@ class CodeApp(App):
 
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),
+        Binding("ctrl+p", "command_palette", "Palette", priority=True),
         Binding("ctrl+shift+p", "command_palette", "Palette", priority=True),
-        Binding("f", "focus_mode", "Focus Mode"),
         Binding("ctrl+b", "toggle_rail", "Toggle Rail"),
-        Binding("ctrl+i", "toggle_inspector", "Inspector", priority=True),
-        Binding("ctrl+\\", "toggle_inspector", "Inspector (alt)", priority=True),
-        Binding("ctrl+alt+left", "resize_drawer_left", "Drawer ←"),
-        Binding("ctrl+alt+right", "resize_drawer_right", "Drawer →"),
-        Binding("tab", "focus_next", "Focus Next"),
-        Binding("shift+tab", "focus_previous", "Focus Prev"),
-        Binding("ctrl+1", "focus_rail", "Rail"),
-        Binding("ctrl+2", "focus_transcript", "Transcript"),
-        Binding("ctrl+3", "focus_inspector", "Inspector"),
-        Binding("ctrl+4", "focus_composer", "Composer"),
+        Binding("ctrl+d", "toggle_diff_drawer", "Diff Drawer", priority=True),
+        Binding("ctrl+l", "toggle_logs_drawer", "Logs Drawer", priority=True),
+        Binding("ctrl+x", "toggle_context_widget", "Context", priority=True),
+        Binding("ctrl+shift+l", "clear_transcript", "Clear"),
         Binding("ctrl+.", "toggle_mode", "SAFE/ARMED"),
         Binding("ctrl+e", "expand_collapse_card", "Expand/Collapse"),
-        Binding("ctrl+l", "clear_transcript", "Clear"),
+        Binding("ctrl+1", "focus_rail", "Rail"),
+        Binding("ctrl+2", "focus_transcript", "Transcript"),
+        Binding("ctrl+3", "focus_composer", "Composer"),
+        Binding("tab", "focus_next", "Focus Next"),
+        Binding("shift+tab", "focus_previous", "Focus Prev"),
+        Binding("f", "focus_mode", "Focus Mode"),
+        Binding("escape", "interrupt_or_close", "Interrupt/Close", priority=True),
     ]
 
     def __init__(self, **kwargs: object) -> None:
@@ -461,17 +471,22 @@ class CodeApp(App):
         self._tokens_received = 0
         self._stream_start_time = 0.0
         self._last_tokens_per_sec_update = 0.0
+        self._approval_tracker = ApprovalCategoryTracker()
+        self._active_task_text = ""
+        self._current_worker = None
 
     def _build_palette_commands(self) -> list[PaletteCommand]:
         return [
-            PaletteCommand("toggle_mode", "Toggle SAFE/ARMED", "Enable or disable tool execution"),
-            PaletteCommand("clear_transcript", "Clear transcript", "Remove all cards"),
-            PaletteCommand("focus_rail", "Focus rail", "Jump to left rail"),
-            PaletteCommand("focus_transcript", "Focus transcript", "Jump to transcript"),
-            PaletteCommand("focus_inspector", "Focus inspector", "Open inspector drawer"),
-            PaletteCommand("focus_composer", "Focus composer", "Jump to input"),
-            PaletteCommand("toggle_inspector", "Toggle Inspector", "Show/Hide inspector drawer"),
-            PaletteCommand("toggle_rail", "Toggle Rail", "Expand/Collapse left rail"),
+            PaletteCommand("toggle_mode", "Toggle SAFE/ARMED", "Enable or disable tool execution", "Ctrl+."),
+            PaletteCommand("clear_transcript", "Clear transcript", "Remove all cards", "Ctrl+Shift+L"),
+            PaletteCommand("toggle_diff_drawer", "Toggle Diff", "Show/Hide diff drawer", "Ctrl+D"),
+            PaletteCommand("toggle_logs_drawer", "Toggle Logs", "Show/Hide logs drawer", "Ctrl+L"),
+            PaletteCommand("toggle_context", "Toggle Context", "Show/Hide context widget", "Ctrl+X"),
+            PaletteCommand("focus_rail", "Focus rail", "Jump to left rail", "Ctrl+1"),
+            PaletteCommand("focus_transcript", "Focus transcript", "Jump to transcript", "Ctrl+2"),
+            PaletteCommand("focus_composer", "Focus composer", "Jump to input", "Ctrl+3"),
+            PaletteCommand("toggle_rail", "Toggle Rail", "Expand/Collapse left rail", "Ctrl+B"),
+            PaletteCommand("interrupt", "Interrupt Agent", "Stop running agent", "Esc"),
             PaletteCommand("focus_mode", "Focus Mode", "Enter distraction-free mode"),
             PaletteCommand("show_keys", "Show Keys", "Display keybindings"),
         ]
@@ -481,16 +496,43 @@ class CodeApp(App):
             await self.push_screen_wait(ArmRequiredModal())
             return False
 
+        # Check category tracker for auto-approval
+        category = ApprovalCategoryTracker.tool_to_category(tool_name)
+        if self._approval_tracker.is_approved(category):
+            # Auto-approved by category - log as decision
+            transcript = self.query_one(TranscriptPane)
+            transcript.add_decision(tool_name, arguments, outcome="approved_category")
+            return True
+
         self.safety_state = SafeArmState.ARMED_PENDING
         self._sync_status_bar()
         diff_text = await self._build_diff_preview(tool_name, arguments)
         reason, risk = self._tool_risk_reason(tool_name)
-        approved = await self.push_screen_wait(ApprovalModal(tool_name, arguments, diff_text, reason, risk))
+
+        # Show 3-way decision modal
+        result = await self.push_screen_wait(
+            DecisionModal(tool_name, arguments, diff_text, reason, risk, category)
+        )
+
         self.safety_state = SafeArmState.ARMED
         self._sync_status_bar()
-        if approved:
-            self._pending_diffs.append(diff_text)
-        return approved
+
+        transcript = self.query_one(TranscriptPane)
+
+        if result == "approve_once":
+            transcript.add_decision(tool_name, arguments, outcome="approved")
+            if diff_text:
+                self._pending_diffs.append(diff_text)
+            return True
+        elif result == "approve_category":
+            self._approval_tracker.approve(category)
+            transcript.add_decision(tool_name, arguments, outcome="approved_category")
+            if diff_text:
+                self._pending_diffs.append(diff_text)
+            return True
+        else:
+            transcript.add_decision(tool_name, arguments, outcome="denied")
+            return False
 
     def _tool_risk_reason(self, tool_name: str) -> tuple[str, str]:
         if tool_name in {"write_file", "str_replace"}:
@@ -563,21 +605,12 @@ class CodeApp(App):
         return "\n".join(diff)
 
     def on_mount(self) -> None:
-        """
-        Lifecycle hook called when the application is mounted.
+        # Mount both drawers as Screen-level overlays
+        diff_drawer = DiffDrawer(id="diff-drawer")
+        logs_drawer = LogsDrawer(id="logs-drawer")
+        self.mount(diff_drawer)
+        self.mount(logs_drawer)
 
-        Initializes background workers for:
-        - Polling available models.
-        - Draining UI events from the bus.
-        - Flushing the stream buffer to the UI.
-        - Loading tool plugins.
-        - Checking provider health.
-        """
-        # Mount InspectorDrawer as Screen-level overlay (not in layout tree)
-        inspector = InspectorDrawer(id="inspector-drawer")
-        self.mount(inspector)
-        # Styles are set via CSS (dock: right, layer: overlay, display: none)
-        
         self.set_interval(10.0, self._poll_models)
         self.set_interval(0.05, self._drain_events)
         self.set_interval(0.05, self._flush_stream)
@@ -587,11 +620,9 @@ class CodeApp(App):
         self.run_worker(self._check_provider_health(), group="health")
         self._sync_header()
         self._sync_sessions()
-        
-        # Force focus on input on mount
+
         self.set_focus(self.query_one("#composer-input", Input))
-        
-        # Show empty state if transcript is empty
+
         transcript = self.query_one(TranscriptPane)
         if not transcript.card_children():
             transcript.show_empty_state()
@@ -602,8 +633,7 @@ class CodeApp(App):
             if not models:
                 transcript = self.query_one(TranscriptPane)
                 transcript.add_system_message(
-                    "No models found in Ollama. Run: ollama pull llama3",
-                    level="warning"
+                    "No models found in Ollama. Run: ollama pull llama3", level="warning"
                 )
             keep_alive = getattr(self.provider, "keep_alive", None)
             if keep_alive == 0:
@@ -611,25 +641,22 @@ class CodeApp(App):
                 transcript.add_system_message(
                     "keep_alive=0 — model reloads from disk every request. "
                     "Set keep_alive=-1 in config.toml for faster responses.",
-                    level="info"
+                    level="info",
                 )
         except Exception as e:
             logger.warning("Provider health check failed: %s", e)
             transcript = self.query_one(TranscriptPane)
             transcript.add_system_message(
-                f"Cannot reach LLM provider ({e}). Is it running?",
-                level="warning"
+                f"Cannot reach LLM provider ({e}). Is it running?", level="warning"
             )
 
     async def _load_plugins(self) -> None:
         await asyncio.to_thread(self.tools.register_plugins, self.workspace)
 
     def _update_header_metrics(self) -> None:
-        """Update header metrics periodically."""
         self._sync_header()
 
     def _update_activity_elapsed(self) -> None:
-        """Update activity bar elapsed time periodically."""
         try:
             activity_bar = self.query_one(PinnedActivityBar)
             activity_bar.tick_elapsed()
@@ -649,28 +676,17 @@ class CodeApp(App):
             pass
 
     def compose(self) -> ComposeResult:
-        """
-        Compose the UI layout.
-
-        Yields:
-            Widgets: The hierarchical structure of widgets (Header, LeftRail, CenterPane, Composer).
-            Note: InspectorDrawer is mounted as overlay in on_mount().
-        """
         yield CodenticHeader(id="header")
-
         with Container(id="layout-root"):
             with Horizontal(id="main-row"):
                 yield LeftRail(self.workspace, id="left-rail")
                 yield CenterPane(id="center-pane")
-        
         yield ComposerBar(id="composer-bar")
 
     def _sync_sessions(self) -> None:
-        # Sessions are handled in LeftRail now
         pass
 
     def _sync_header(self) -> None:
-        """Update header with current state."""
         header = self.query_one(CodenticHeader)
         header.mode = self.safety_state.value
         header.model = getattr(self.provider, "model", "unknown")
@@ -678,11 +694,26 @@ class CodeApp(App):
         header.ctx_pct = self._context_pct()
         header.ctx_used = self.agent.conversation.total_tokens
         header.ctx_max = self.config.context.max_tokens
-        header.queue_count = len(self._pending_diffs) if hasattr(self, "_pending_diffs") else 0
         header.is_active = self._processing or self._thinking
-        
-        # Update tokens/sec (throttled)
+
+        # Agent status machine
+        if self._processing:
+            if self._thinking:
+                header.agent_status = "thinking"
+            else:
+                header.agent_status = "acting"
+        else:
+            header.agent_status = "idle"
+
+        # Active task
+        header.active_task = self._active_task_text
+
+        # Dirty state
+        header.dirty_state = self._check_dirty()
+
+        # Tokens/sec
         import time
+
         now = time.time()
         if self._stream_start_time > 0 and now - self._last_tokens_per_sec_update > 0.5:
             elapsed = now - self._stream_start_time
@@ -691,13 +722,24 @@ class CodeApp(App):
             self._last_tokens_per_sec_update = now
         elif self._stream_start_time == 0:
             header.tokens_per_sec = 0.0
-        
-        # Calculate latency (time from request start to first token)
-        if self._stream_start_time > 0 and self._tokens_received > 0:
-            # Approximate latency as time to first token
-            header.latency_ms = int((self._last_tokens_per_sec_update - self._stream_start_time) * 1000) if self._last_tokens_per_sec_update > 0 else 0
-        else:
-            header.latency_ms = 0
+
+        # Update context widget
+        try:
+            ctx_widget = self.query_one(ContextWidget)
+            ctx_widget.update_context(self._context_pct(), self._pinned_files)
+        except Exception:
+            pass
+
+    def _sync_status_bar(self) -> None:
+        """Alias for _sync_header used during approval flow."""
+        self._sync_header()
+
+    def _check_dirty(self) -> bool:
+        try:
+            repo = Repo(self.workspace, search_parent_directories=True)
+            return repo.is_dirty()
+        except (InvalidGitRepositoryError, TypeError, ValueError):
+            return False
 
     def _current_branch(self) -> str:
         try:
@@ -724,49 +766,36 @@ class CodeApp(App):
         event.input.value = ""
 
         self._processing = True
+        self._active_task_text = text.split("\n", 1)[0][:60]
         transcript = self.query_one(TranscriptPane)
-        
-        # Remove empty state if present
+
         transcript.remove_empty_state()
-        
+
         self._active_card = transcript.add_message("user", text)
         self._stream_card = transcript.add_message("assistant", "")
         self._stream_card.start_streaming()
         self._active_card = self._stream_card
         self._thinking = True
-        
-        # Reset streaming metrics
+
         import time
+
         self._stream_start_time = time.time()
         self._tokens_received = 0
-        
-        # Start activity bar
+
         activity_bar = self.query_one(PinnedActivityBar)
         activity_bar.start_activity("Processing request...")
-        
+
+        # Update header to show thinking
+        self._sync_header()
+
         await self.event_bus.publish(self._event("status", {"status": "processing"}, "ui"))
-        self.run_worker(self.process(text))
+        self._current_worker = self.run_worker(self.process(text))
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id != "composer-input":
             return
-        # Hint strip visibility is handled by ComposerBar itself
-        pass
 
     async def process(self, text: str) -> None:
-        """
-        Process user input by passing it to the agent loop.
-
-        Args:
-            text (str): The user's input command or message.
-
-        This method:
-        1. Publishes the user message to the UI.
-        2. Sets status to "processing".
-        3. Runs the agent loop.
-        4. Handles streaming chunks (text deltas) and tool results.
-        5. Updates context/status on completion.
-        """
         logger.info("process() started: %s", text[:80])
         try:
             async for chunk in self.agent.run(text):
@@ -796,6 +825,9 @@ class CodeApp(App):
             await self.event_bus.publish(
                 self._event("context", {"ctx_pct": self._context_pct(), "pinned": self._pinned_files}, "ui")
             )
+        except asyncio.CancelledError:
+            logger.info("process() cancelled (interrupted)")
+            await self.event_bus.publish(self._event("stream_end", {}, "agent"))
         except Exception as e:
             logger.exception("process() failed: %s", e)
             await self.event_bus.publish(
@@ -808,36 +840,29 @@ class CodeApp(App):
             await self.event_bus.publish(self._event("status", {"status": "ready"}, "ui"))
         finally:
             self._processing = False
+            self._active_task_text = ""
             await self.event_bus.publish(self._event("stream_end", {}, "agent"))
 
     async def _drain_events(self) -> None:
-        """
-        Periodically drain events from the UIEventBus and update UI components.
-
-        Handles:
-        - "message": Appends text to the assistant's response stream (throttled).
-        - "tool_result": Adds tool execution cards to the transcript and updates the inspector.
-        - "stream_end": Finalizes the current streaming response.
-        - "status": Updates activity bar and header.
-        - "context": Updates the context percentage usage in header and inspector.
-        - "diff": Shows diff previews in the inspector.
-        """
         try:
-            events = await self.event_bus.drain()
-            if not events:
+            events_list = await self.event_bus.drain()
+            if not events_list:
                 return
 
             transcript = self.query_one(TranscriptPane)
-            inspector = self.query_one(InspectorDrawer)
+            diff_drawer = self.query_one(DiffDrawer)
+            logs_drawer = self.query_one(LogsDrawer)
             activity_bar = self.query_one(PinnedActivityBar)
+            header = self.query_one(CodenticHeader)
 
-            for event in events:
+            for event in events_list:
                 if event.type == "message":
                     if event.payload.get("role") == "assistant":
                         delta = event.payload.get("delta", "")
-                        self._tokens_received += len(delta.split())  # Rough token count
+                        self._tokens_received += len(delta.split())
                         if self._thinking and self._stream_card:
                             self._thinking = False
+                            header.agent_status = "acting"
                         self._stream_buffer += delta
                         if self._stream_card is None:
                             self._stream_card = transcript.add_message("assistant", "")
@@ -850,30 +875,69 @@ class CodeApp(App):
                     content = event.payload.get("content", "")
                     is_error = event.payload.get("is_error", False)
                     arguments = event.payload.get("arguments")
-                    
-                    # If this is a system failure, mark the streaming card as error
+
+                    # Update header status
+                    header.agent_status = "acting"
+
+                    # System failure handling
                     if is_error and tool_name == "system" and self._stream_card:
                         self._fail_streaming(content)
                         activity_bar.stop_activity()
-                        inspector.append_log(f"\n--- SYSTEM ERROR ---\n{content}\n")
+                        logs_drawer.append_log(f"SYSTEM ERROR: {content}", level="error")
                         continue
-                    
-                    # Add tool result card
-                    card = transcript.add_tool_result(tool_name, arguments, content, is_error)
+
+                    # Create ActionCard (compact merged card)
+                    card = transcript.add_action_card(tool_name, arguments, content, is_error)
                     self._active_card = card
                     self._stream_card = None
                     self._thinking = False
 
-                    # Update activity bar
                     activity_bar.stop_activity()
 
+                    # Diff handling: auto-open DiffDrawer for file writes
                     diff_text = self._pending_diffs.pop(0) if self._pending_diffs else ""
                     if diff_text:
-                        inspector.show_diff(diff_text)
-                    inspector.show_tool(tool_name, arguments, content)
+                        path = (arguments or {}).get("path", "")
+                        diff_drawer.show_single_diff(diff_text, path)
+                        diff_drawer.show()
 
-                    # Append to inspector logs
-                    inspector.append_log(f"\n--- TOOL: {tool_name} ---\n{content}\n")
+                    # Route logs
+                    log_level = "error" if is_error else "info"
+                    logs_drawer.append_log(f"TOOL: {tool_name} -> {content[:200]}", level=log_level)
+
+                    # Verify detection: check if command is a test runner
+                    if tool_name == "run_command" and arguments:
+                        command = arguments.get("command", "")
+                        if VERIFY_PATTERNS.search(command):
+                            header.agent_status = "verifying"
+                            passed = not is_error
+                            errors = []
+                            if is_error and content:
+                                errors = [
+                                    line
+                                    for line in content.splitlines()
+                                    if "FAILED" in line or "Error" in line or "error" in line.lower()
+                                ][:10]
+
+                            # Parse summary
+                            summary = self._parse_verify_summary(content, passed)
+                            transcript.add_verify(passed, summary, errors=errors, full_output=content)
+                            logs_drawer.pin_verify(summary, passed)
+                            logs_drawer.show()
+
+                            # Publish verify_result event
+                            await self.event_bus.publish(
+                                self._event(
+                                    "verify_result",
+                                    {
+                                        "passed": passed,
+                                        "summary": summary,
+                                        "errors": errors,
+                                        "full_output": content,
+                                    },
+                                    "agent",
+                                )
+                            )
 
                 elif event.type == "stream_end":
                     self._flush_stream_buffer(transcript)
@@ -884,6 +948,7 @@ class CodeApp(App):
                     activity_bar.stop_activity()
                     self._stream_start_time = 0.0
                     self._tokens_received = 0
+                    header.agent_status = "idle"
 
                 elif event.type == "status":
                     status = event.payload.get("status", "ready")
@@ -895,7 +960,11 @@ class CodeApp(App):
                 elif event.type == "context":
                     ctx_pct = event.payload.get("ctx_pct", 0)
                     pinned = event.payload.get("pinned", [])
-                    inspector.show_context(pinned, ctx_pct)
+                    try:
+                        ctx_widget = self.query_one(ContextWidget)
+                        ctx_widget.update_context(ctx_pct, pinned)
+                    except Exception:
+                        pass
                     self._sync_header()
 
                 elif event.type == "plan":
@@ -906,19 +975,38 @@ class CodeApp(App):
                 elif event.type == "diff":
                     diff_text = event.payload.get("diff", "")
                     if diff_text:
-                        inspector.show_diff(diff_text)
+                        path = event.payload.get("path", "")
+                        diff_drawer.show_single_diff(diff_text, path)
+
+                elif event.type == "agent_state":
+                    state = event.payload.get("state", "idle")
+                    header.agent_status = state
+
+                elif event.type == "verify_result":
+                    # Already handled inline during tool_result, but handle explicit events too
+                    pass
+
         except Exception:
             logger.exception("_drain_events failed")
 
+    def _parse_verify_summary(self, output: str, passed: bool) -> str:
+        """Parse test output for a human-readable summary."""
+        # Try to find pytest-style summary
+        for line in reversed(output.splitlines()):
+            line = line.strip()
+            if "passed" in line.lower() or "failed" in line.lower():
+                if any(c.isdigit() for c in line):
+                    return f"Tests: {line}"
+        if passed:
+            return "Tests: passed"
+        return "Tests: FAILED"
+
     def _flush_stream_buffer(self, transcript: TranscriptPane) -> None:
-        """Flush stream buffer to card (throttled by card's append method)."""
         if self._stream_card and self._stream_buffer:
             self._stream_card.append(self._stream_buffer)
             self._stream_buffer = ""
-            # Only scroll if user is at bottom (handled by TranscriptPane)
 
     def _fail_streaming(self, error_text: str) -> None:
-        """Mark the active streaming card as error and append error text."""
         if self._stream_card:
             if error_text:
                 self._stream_card.append(f"\n{error_text}")
@@ -927,7 +1015,6 @@ class CodeApp(App):
         self._thinking = False
 
     async def _flush_stream(self) -> None:
-        """Periodically flush stream buffer."""
         try:
             if not self._stream_buffer or not self._stream_card:
                 return
@@ -936,25 +1023,24 @@ class CodeApp(App):
         except Exception:
             logger.exception("_flush_stream failed")
 
+    # --- Actions ---
+
     async def action_clear_transcript(self) -> None:
-        """Clear conversation history with confirmation modal (bound to Ctrl+L)"""
         transcript = self.query_one(TranscriptPane)
-        # Count cards (excluding empty state)
         from .cards import EmptyStateCard
+
         cards = [c for c in transcript.card_children() if not isinstance(c, EmptyStateCard)]
         message_count = len(cards)
-
         if message_count == 0:
             return
-
         confirmed = await self.push_screen_wait(ClearTranscriptModal(message_count))
-
         if confirmed:
             transcript.clear_cards()
             transcript.show_empty_state()
             self._stream_buffer = ""
             self._stream_card = None
             self._thinking = False
+            self._approval_tracker.reset()
 
     async def action_command_palette(self) -> None:
         selection = await self.push_screen_wait(CommandPalette(self._palette_commands))
@@ -965,114 +1051,157 @@ class CodeApp(App):
         if command_id == "toggle_mode":
             await self.action_toggle_mode()
         elif command_id == "clear_transcript":
-            self.action_clear_transcript()
-        elif command_id == "focus_navigator":
-            self.action_focus_navigator()
+            await self.action_clear_transcript()
+        elif command_id == "toggle_diff_drawer":
+            self.action_toggle_diff_drawer()
+        elif command_id == "toggle_logs_drawer":
+            self.action_toggle_logs_drawer()
+        elif command_id == "toggle_context":
+            self.action_toggle_context_widget()
+        elif command_id == "focus_rail":
+            self.action_focus_rail()
         elif command_id == "focus_transcript":
             self.action_focus_transcript()
-        elif command_id == "focus_inspector":
-            self.action_focus_inspector()
         elif command_id == "focus_composer":
             self.action_focus_composer()
-        elif command_id == "toggle_output":
-            self.action_toggle_output()
-            self.action_focus_composer()
-        elif command_id == "show_help":
-            # Help functionality can be added later if needed
-            pass
+        elif command_id == "toggle_rail":
+            self.action_toggle_rail()
+        elif command_id == "interrupt":
+            self.action_interrupt_agent()
+        elif command_id == "focus_mode":
+            self.action_focus_mode()
 
     def action_focus_rail(self) -> None:
-        """Focus the left rail (bound to Ctrl+1)."""
-        rail = self.query_one(LeftRail)
-        rail.focus()
-    
-    def action_toggle_rail(self) -> None:
-        """Toggle rail expansion (bound to Ctrl+B)."""
-        rail = self.query_one(LeftRail)
-        rail.toggle()
-    
-    def action_focus_navigator(self) -> None:
-        # Navigator is now part of LeftRail
         rail = self.query_one(LeftRail)
         rail.focus()
 
-    # Note: action_focus_next and action_focus_previous are inherited from textual.app.App
-    # They call self.screen.focus_next() and self.screen.focus_previous() respectively
+    def action_toggle_rail(self) -> None:
+        rail = self.query_one(LeftRail)
+        rail.toggle()
+
+    def action_focus_navigator(self) -> None:
+        rail = self.query_one(LeftRail)
+        rail.focus()
 
     def action_focus_transcript(self) -> None:
         transcript = self.query_one(TranscriptPane)
         transcript.focus()
 
-    def action_focus_inspector(self) -> None:
-        inspector = self.query_one(InspectorDrawer)
-        if not inspector._visible:
-            inspector.show()
-        inspector.focus()
-
     def action_focus_composer(self) -> None:
         self.query_one("#composer-input", Input).focus()
 
+    def action_toggle_diff_drawer(self) -> None:
+        diff_drawer = self.query_one(DiffDrawer)
+        diff_drawer.toggle()
+
+    def action_toggle_logs_drawer(self) -> None:
+        logs_drawer = self.query_one(LogsDrawer)
+        logs_drawer.toggle()
+
+    def action_toggle_context_widget(self) -> None:
+        ctx_widget = self.query_one(ContextWidget)
+        ctx_widget.toggle()
 
     def action_toggle_output(self) -> None:
+        from .layout import CodeOutputPane
+
         pane = self.query_one(CodeOutputPane)
         pane.toggle()
         if pane.has_class("expanded"):
             pane.focus()
 
     async def action_toggle_mode(self) -> None:
-        """Toggle SAFE/ARMED mode."""
         if self.safety_state == SafeArmState.SAFE:
             approved = await self.push_screen_wait(ArmConfirmModal())
             if approved:
                 self.safety_state = SafeArmState.ARMED
         else:
             self.safety_state = SafeArmState.SAFE
+            self._approval_tracker.reset()
         self._sync_header()
 
     def action_expand_collapse_card(self) -> None:
-        """Expand/collapse active card."""
         if self._active_card:
             self._active_card.toggle_collapse()
 
-    def on_card_selected(self, message: CardSelected) -> None:
-        """Handle card selection - sets active card, updates inspector if already open."""
-        self._active_card = message.card
-        inspector = self.query_one(InspectorDrawer)
+    def action_interrupt_or_close(self) -> None:
+        """Esc: close drawer if open, else interrupt agent if processing."""
+        diff_drawer = self.query_one(DiffDrawer)
+        logs_drawer = self.query_one(LogsDrawer)
 
-        # Only update inspector content if it's already visible
-        # Don't auto-open it on every card click
-        if not inspector._visible:
+        if diff_drawer._visible:
+            diff_drawer.hide()
+            return
+        if logs_drawer._visible:
+            logs_drawer.hide()
             return
 
-        from .cards import ToolResultCard, ToolCallCard
-        if isinstance(message.card, (ToolResultCard, ToolCallCard)):
-            inspector.show_tool(
-                message.card.tool_name,
-                getattr(message.card, "arguments", None),
-                getattr(message.card, "content", ""),
-            )
-        elif isinstance(message.card, DiffCard):
-            inspector.show_diff(message.card._full_diff)
+        if self._processing:
+            self.action_interrupt_agent()
+
+    def action_interrupt_agent(self) -> None:
+        """Cancel running worker, stop streaming, append [Interrupted]."""
+        if self._current_worker and not self._current_worker.is_finished:
+            self._current_worker.cancel()
+
+        if self._stream_card:
+            self._stream_card.append("\n\n[Interrupted]")
+            self._stream_card.stop_streaming()
+            self._stream_card = None
+
+        self._stream_buffer = ""
+        self._thinking = False
+        self._processing = False
+        self._active_task_text = ""
+
+        try:
+            activity_bar = self.query_one(PinnedActivityBar)
+            activity_bar.stop_activity()
+        except Exception:
+            pass
+
+        self._sync_header()
+
+    def action_focus_mode(self) -> None:
+        """Toggle focus mode - minimal UI."""
+        self._focus_mode = not self._focus_mode
+        if self._focus_mode:
+            self.screen.add_class("focus-mode")
+            rail = self.query_one(LeftRail)
+            rail.add_class("focus-locked")
         else:
-            inspector.show_context(self._pinned_files, self._context_pct())
+            self.screen.remove_class("focus-mode")
+            rail = self.query_one(LeftRail)
+            rail.remove_class("focus-locked")
+
+    def on_card_selected(self, message: CardSelected) -> None:
+        self._active_card = message.card
+
+        # Update diff drawer if visible with relevant content
+        diff_drawer = self.query_one(DiffDrawer)
+        if diff_drawer._visible:
+
+            if isinstance(message.card, DiffCard):
+                diff_drawer.show_single_diff(message.card._full_diff, message.card.file_path)
+            elif isinstance(message.card, ActionCard) and message.card.result_content:
+                # Show tool details in logs
+                pass
 
     def on_mouse_down(self, event: events.MouseDown) -> None:
-        """Global right-click prevention - stop propagation for button 3."""
-        # If you want to kill right-click (or non-left clicks), stop them here.
-        if event.button != 1:  # Not left-click
+        if event.button != 1:
             event.stop()
             return
-        # Do NOT call super().on_mouse_down; App has no such method.
-        # Allow normal propagation by doing nothing.
         return
-    
+
     def on_file_pin_message(self, message: FilePinMessage) -> None:
-        """Handle file pin message."""
         path = message.path
         if str(path) not in self._pinned_files:
             self._pinned_files.append(str(path))
-        inspector = self.query_one(InspectorDrawer)
-        inspector.show_context(self._pinned_files, self._context_pct())
+        try:
+            ctx_widget = self.query_one(ContextWidget)
+            ctx_widget.update_context(self._context_pct(), self._pinned_files)
+        except Exception:
+            pass
         self._sync_header()
 
     def _event(self, event_type: str, payload: dict, source: str) -> UIEvent:

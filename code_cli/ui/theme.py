@@ -53,6 +53,28 @@ STATUS_COLORS = {
     "info": COLORS["text_muted"],
 }
 
+# Badge colors for timeline cards
+BADGE_COLORS = {
+    "user": COLORS["text_muted"],
+    "think": COLORS["accent_cyan"],
+    "think_done": COLORS["text_muted"],
+    "action": COLORS["accent_orange"],
+    "action_ok": COLORS["success"],
+    "action_error": COLORS["danger"],
+    "plan": COLORS["accent_cyan"],
+    "diff": COLORS["text_muted"],
+    "error": COLORS["danger"],
+    "verify_pass": COLORS["success"],
+    "verify_fail": COLORS["danger"],
+    "decision": COLORS["accent_orange"],
+    "decision_approved": COLORS["success"],
+    "decision_denied": COLORS["danger"],
+    "system": COLORS["text_muted"],
+}
+
+# Tool secondary color for dimmed tool output
+TOOL_SECONDARY = COLORS["text_muted"]
+
 # Typography variants for consistent text styling
 TYPOGRAPHY = {
     "title": f"bold {COLORS['text']}",
@@ -124,8 +146,23 @@ ICONS = {
     # Actions
     "approve": ("󰄬", "OK"),
     "reject": ("󰜺", "X"),
-    "expand": ("󰁔", ">"),
-    "collapse": ("󰁍", "<"),
+    "expand": ("󰁔", "▶"),
+    "collapse": ("󰁍", "▼"),
+    # Badge icons for timeline cards
+    "badge_user": ("󰀄", "USR"),
+    "badge_think": ("󰔚", "THK"),
+    "badge_action": ("󰆍", "ACT"),
+    "badge_plan": ("󰙅", "PLN"),
+    "badge_diff": ("󰀀", "DIF"),
+    "badge_error": ("󰅖", "ERR"),
+    "badge_verify": ("󰐥", "VRF"),
+    "badge_decision": ("󰌑", "DEC"),
+    "badge_system": ("󰒓", "SYS"),
+    # Agent status
+    "status_idle": ("󰒲", "IDLE"),
+    "status_thinking": ("󰔚", "..."),
+    "status_acting": ("󰆍", "ACT"),
+    "status_verifying": ("󰐥", "VRF"),
 }
 
 

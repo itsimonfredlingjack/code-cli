@@ -3,14 +3,15 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from enum import Enum
-import json
 
 import pygments.styles
 from rich.syntax import Syntax
 from textual.app import ComposeResult
 from textual.containers import Container
+from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, ListItem, ListView
 
@@ -30,14 +31,12 @@ class PaletteCommand:
     command_id: str
     title: str
     description: str
-
-
-from textual.message import Message
+    shortcut: str = ""
 
 
 class CardSelected(Message):
     """Message sent when a card is selected."""
-    
+
     def __init__(self, card) -> None:
         super().__init__()
         self.card = card
@@ -46,7 +45,15 @@ class CardSelected(Message):
 class CommandItem(ListItem):
     def __init__(self, command: PaletteCommand) -> None:
         self.command_id = command.command_id
-        label = Label(f"{command.title} — {command.description}")
+        # Show shortcut right-aligned
+        if command.shortcut:
+            label_text = f"{command.title} — {command.description}"
+            # Pad to align shortcuts
+            pad = max(0, 55 - len(label_text))
+            label_text += " " * pad + command.shortcut
+        else:
+            label_text = f"{command.title} — {command.description}"
+        label = Label(label_text)
         super().__init__(label)
 
 
@@ -116,6 +123,109 @@ class CommandPalette(ModalScreen[str | None]):
             self.dismiss(item.command_id)
 
 
+class DecisionModal(ModalScreen[str]):
+    """3-way approval modal: approve_once, approve_category, deny."""
+
+    CSS = f"""
+    DecisionModal {{
+        align: center middle;
+        background: rgba(0, 0, 0, 0.85);
+    }}
+
+    #dialog {{
+        grid-size: 1;
+        grid-gutter: 1 2;
+        padding: 1 2;
+        width: 84;
+        height: auto;
+        border: solid {COLORS['warning']};
+        background: {COLORS['surface']};
+    }}
+
+    #title {{
+        height: 1;
+        width: 100%;
+        content-align: center middle;
+        text-style: bold;
+        color: {COLORS['warning']};
+    }}
+
+    #consequence {{
+        width: 100%;
+        height: auto;
+        color: {COLORS['text_dim']};
+    }}
+
+    .decision-buttons {{
+        height: 3;
+        width: 100%;
+    }}
+
+    Button {{
+        width: 100%;
+        margin: 0 1;
+    }}
+    """
+
+    def __init__(
+        self,
+        tool_name: str,
+        arguments: dict,
+        diff_text: str,
+        reason: str,
+        risk: str,
+        category: str = "",
+    ) -> None:
+        super().__init__()
+        self.tool_name = tool_name
+        self.arguments = arguments
+        self.diff_text = diff_text
+        self.reason = reason
+        self.risk = risk
+        self.category = category or ApprovalCategoryTracker.tool_to_category(tool_name)
+
+    def compose(self) -> ComposeResult:
+        args_json = json.dumps(self.arguments, indent=2)
+        consequence = f"Reason: {self.reason} | Risk: {self.risk} | Category: {self.category}"
+
+        yield Container(
+            Label(f"CONFIRM TOOL: {self.tool_name}", id="title"),
+            Label(consequence, id="consequence"),
+            Syntax(
+                self.diff_text or "No diff available",
+                "diff",
+                theme="code_neon",
+                line_numbers=False,
+                word_wrap=True,
+                id="diff",
+            ),
+            Syntax(
+                args_json,
+                "json",
+                theme="code_neon",
+                line_numbers=False,
+                word_wrap=True,
+                id="details",
+            ),
+            Container(
+                Button("DENY", variant="error", id="deny"),
+                Button(f"APPROVE ALL [{self.category}]", variant="warning", id="approve_category"),
+                Button("APPROVE ONCE", variant="success", id="approve_once"),
+                classes="decision-buttons",
+            ),
+            id="dialog",
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "approve_once":
+            self.dismiss("approve_once")
+        elif event.button.id == "approve_category":
+            self.dismiss("approve_category")
+        else:
+            self.dismiss("deny")
+
+
+# Legacy alias
 class ApprovalModal(ModalScreen[bool]):
     CSS = f"""
     ApprovalModal {{
@@ -185,6 +295,36 @@ class ApprovalModal(ModalScreen[bool]):
             self.dismiss(True)
         else:
             self.dismiss(False)
+
+
+class ApprovalCategoryTracker:
+    """Tracks approved tool categories for session-level auto-approval."""
+
+    # Category groupings
+    CATEGORIES = {
+        "file_write": {"write_file", "str_replace"},
+        "shell_exec": {"run_command"},
+        "git_op": {"git_add", "git_commit"},
+    }
+
+    def __init__(self) -> None:
+        self._approved: set[str] = set()
+
+    def approve(self, category: str) -> None:
+        self._approved.add(category)
+
+    def is_approved(self, category: str) -> bool:
+        return category in self._approved
+
+    def reset(self) -> None:
+        self._approved.clear()
+
+    @staticmethod
+    def tool_to_category(tool_name: str) -> str:
+        for cat, tools in ApprovalCategoryTracker.CATEGORIES.items():
+            if tool_name in tools:
+                return cat
+        return "other"
 
 
 class ArmConfirmModal(ModalScreen[bool]):
